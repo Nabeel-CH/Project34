@@ -1,0 +1,514 @@
+%!TEX root = ../thesis.tex
+% Chapter --- Extension Experiments
+
+\chapter{Extension Experiments} \label{sec:extensions}
+
+This chapter collects the extension work carried out after the paper-style replication of Chapter~\ref{sec:results}, organised around the two tasks. After a broad \emph{screening} of supporting, non-region-aware methods (Section~\ref{sec:screening}, from \textit{FINAL Step~2.3}), it follows two threads. On the \emph{tissue} side, the \emph{scattering covariance} descriptor (Section~\ref{sec:scov_tissue}) is the main WS-branch improvement --- a richer \emph{scalar} representation that suffices for texture. On the \emph{mass} side (Section~\ref{sec:region_aware}, from \textit{FINAL Step~2.4}), the consistent lesson --- previewed in Section~\ref{sec:why_extension} --- is that what rescues the weak averaged-WS branch is \emph{preserving the scattering spatial map and learning over it with a small CNN}, rather than swapping scalar features or classifiers; the lesion-relative \emph{region-aware} decomposition is the interpretable instantiation of that idea. Supporting CNN-crop and fusion experiments (Section~\ref{sec:supporting_ext}) and a layer of negative, unstable, or superseded controls preserved in \textit{FINAL Step~2.5} (summarised in Section~\ref{sec:ws_alternatives}) document the main extension search. The final section (Section~\ref{sec:preproc_sensitivity}) reports a late preprocessing-sensitivity investigation: it does not replace the main replication, but it shows that removing CLAHE is a useful mass-side sensitivity for WS and region-aware WS-map methods. Unless explicitly labelled otherwise, all numbers use the locked five-seed image-level protocol of Section~\ref{sec:eval_protocol}.
+
+\section{Screening of supporting extensions} \label{sec:screening}
+
+Before committing to a deep extension, a broad set of non-region-aware methods was screened under the locked five-seed protocol (\textit{FINAL Step~2.3}). Table~\ref{tab:screening_overview} summarises them, with mass AU-ROC as the headline metric (the imbalanced task; averaged-WS baseline $0.726$, majority baseline $0.500$). The recurring pattern is that changing the \emph{scalar} feature or the classifier moves mass performance only modestly and within across-seed noise, whereas the one method that \emph{preserves the spatial map} and learns over it --- the full-patch WS$\rightarrow$CNN head ($0.909$) --- jumps clear of the strict paper-style WS branch, motivating the region-aware deep dive (Section~\ref{sec:region_aware}). On the \emph{tissue} side, several structured summaries already saturate the task, and scattering covariance remains the main adopted WS-specific extension (Section~\ref{sec:scov_tissue}).
+
+\begin{table}[h]
+\centering
+\caption{Screening of supporting (non-region-aware) extension methods, from \textit{FINAL Step~2.3} (\texttt{supporting\_extensions\_results.csv}). AU-ROC is the five-seed mean; ``status'' records whether each method was adopted, pursued further, kept as supporting evidence, or dropped. Averaged-WS baselines: mass $0.726$, tissue $0.895$.}
+\label{tab:screening_overview}
+\small
+\begin{tabular}{p{4.2cm}p{0.9cm}p{1.5cm}p{1.7cm}p{4.1cm}}
+\toprule
+\textbf{Method} & \textbf{Task} & \textbf{AU-ROC} & \textbf{Status} & \textbf{Lesson} \\
+\midrule
+\multicolumn{5}{l}{\textit{WS representation / classifier variants}} \\
+WS normalisation (S0 / z-score)        & mass   & $0.72$/$0.78$ & dropped     & no consistent gain over averaged WS \\
+$J{=}3$ per-path / statistical WS      & mass   & $0.66$        & dropped     & extra scalars do not beat the mean \\
+Pooled $2{\times}2$ + Cohen's d        & mass   & $0.798$       & supporting  & structured pooling + selection helps modestly \\
+Pooled $2{\times}2$ + PCA/RBF-SVM      & mass   & $0.861$       & supporting  & best hand-pooled mass result \\
+Scattering covariance ($J{=}6,L{=}3$)  & tissue & $0.984$       & adopted     & strongest adopted tissue-side WS extension \\
+Scattering covariance ($J{=}6,L{=}3$)  & mass   & $0.734$       & dropped     & no meaningful AU-ROC gain on mass \\
+Full-patch WS$\rightarrow$CNN head     & mass   & $0.909$       & pursued     & \textbf{preserving the spatial map is the biggest lever} \\
+\midrule
+\multicolumn{5}{l}{\textit{CNN variants (frozen ResNet18, mass)}} \\
+Tight crop $\rightarrow$ logreg        & mass   & $0.906$       & supporting  & highest crop AU-ROC (within noise of square) \\
+Square crop $\rightarrow$ logreg       & mass   & $0.857$       & supporting  & stable comparator carried into Section~\ref{sec:region_aware} \\
+Expanded crop $\rightarrow$ logreg     & mass   & $0.820$       & dropped     & over-large crop dilutes the lesion \\
+\midrule
+\multicolumn{5}{l}{\textit{Fusion variants (whole-patch, mass)}} \\
+Feature/early fusion (concat)          & mass   & $0.882$       & supporting  & improves on the strict k-NN fusion head \\
+True late-probability fusion           & mass   & $0.858$       & supporting  & no robust whole-patch fusion gain \\
+\midrule
+\multicolumn{5}{l}{\textit{Appendix / negative controls (\textit{FINAL Step~2.5})}} \\
+Flatten / flatten+PCA; tensor-distance & both   & ---           & dropped     & did not beat simpler baselines; against the no-flattening guidance \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection*{Project-wide master comparison}
+
+For a more complete view, Tables~\ref{tab:master_all_tissue}--\ref{tab:master_all_mass} consolidate the main paper-replication, supporting-extension, region-aware, and appendix-level methods into task-specific master comparisons. They are intentionally AU-ROC-led, matching the final protocol and the discussion of class imbalance in Section~\ref{sec:eval_protocol}. The companion plots in Figures~\ref{fig:all_methods_tissue}--\ref{fig:all_methods_mass} show the same comparison visually with across-seed error bars where available. The full generated source table is saved as \texttt{data/outputs/report\_figures/all\_methods\_master.csv}; the printed tables below keep the report readable by focusing on the report-level and most informative negative-control rows.
+
+\begin{table}[h]
+\centering
+\caption{Tissue task --- master method comparison across paper benchmarks, replication models, extensions, and selected negative controls. AU-ROC is the five-seed mean~$\pm$~standard deviation unless the row is a Razali paper benchmark.}
+\label{tab:master_all_tissue}
+\scriptsize
+\begin{adjustbox}{width=\textwidth}
+\begin{tabular}{p{5.3cm}p{3.0cm}p{2.1cm}p{1.5cm}p{2.2cm}}
+\toprule
+\textbf{Method} & \textbf{Family} & \textbf{AU-ROC} & \textbf{Test} & \textbf{Status / lesson} \\
+\midrule
+Pooled $2{\times}2$ + Cohen's $d$ & WS extension & $0.997 \pm 0.001$ & 0.975 & strong but not primary \\
+Full-patch WS$\rightarrow$CNN head & spatial-map screen & $0.996 \pm 0.004$ & 0.968 & tissue already saturated \\
+CNN + WS fusion (concat) & replication & $0.988 \pm 0.007$ & 0.964 & paper-style fusion \\
+Scattering covariance ($J{=}6,L{=}3$) & WS extension & $0.984 \pm 0.010$ & 0.959 & adopted tissue WS extension \\
+Direct Cheng scattering covariance & WS extension & $0.982 \pm 0.015$ & 0.943 & sensitivity check \\
+CNN-only (ResNet18$\rightarrow$kNN) & replication & $0.979 \pm 0.010$ & 0.979 & near-saturated \\
+Scattering covariance ($J{=}6,L{=}5$) & WS extension & $0.977 \pm 0.016$ & 0.923 & higher-dimensional variant \\
+Razali CNN + WS fusion & paper benchmark & 0.960 & 0.935 & published reference \\
+WS channel-energy grid & appendix control & $0.956 \pm 0.014$ & 0.961 & strong tissue-only control \\
+Razali WS-only & paper benchmark & 0.940 & 0.914 & published reference \\
+Razali CNN-only & paper benchmark & 0.900 & 0.774 & published reference \\
+WS-only (averaged) & replication & $0.895 \pm 0.070$ & 0.839 & paper-style WS baseline \\
+Tensor-distance cosine 1-NN & appendix control & $0.876 \pm 0.050$ & 0.829 & heavier, no gain \\
+WS input z-score / $S_0$ normalisation & normalisation controls & $0.867$ / $0.837$ & 0.792 / 0.740 & dropped \\
+WS full-map adaptive-PCA & appendix control & $0.849 \pm 0.061$ & 0.801 & flatten/PCA underperforms \\
+Majority baseline & baseline & 0.500 & 0.570 & trivial reference \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.98\textwidth]{../data/outputs/report_figures/all_methods_tissue_auroc.png}
+\caption{Tissue task master comparison as a horizontal AU-ROC bar chart. Error bars show across-seed standard deviation for project methods; Razali paper rows are single reported values. The main visual lesson is that tissue is close to saturated for several structured representations, with scattering covariance and CNN/fusion methods all near the top.}
+\label{fig:all_methods_tissue}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\caption{Mass task --- master method comparison across paper benchmarks, replication models, supporting extensions, region-aware/spatial-map models, and selected negative controls. AU-ROC is the five-seed mean~$\pm$~standard deviation unless the row is a Razali paper benchmark.}
+\label{tab:master_all_mass}
+\scriptsize
+\begin{adjustbox}{width=\textwidth}
+\begin{tabular}{p{5.3cm}p{3.0cm}p{2.1cm}p{1.5cm}p{2.2cm}}
+\toprule
+\textbf{Method} & \textbf{Family} & \textbf{AU-ROC} & \textbf{Test} & \textbf{Status / lesson} \\
+\midrule
+Razali CNN + WS fusion & paper benchmark & 1.000 & 0.917 & single-split reference \\
+Region-aware late fusion & spatial-map / fusion & $0.948 \pm 0.033$ & 0.883 & numerically strongest \\
+Region-aware WS$\rightarrow$CNN head & region-aware extension & $0.946 \pm 0.036$ & 0.899 & interpretable all-region model \\
+Region ablation: ALL four & region ablation & $0.946 \pm 0.032$ & 0.899 & strongest complete region set \\
+Region ablation: drop boundary & region ablation & $0.939 \pm 0.031$ & 0.858 & highest leave-one-out row \\
+Region ablation: context only & region ablation & $0.926 \pm 0.031$ & 0.824 & strongest single region \\
+Full-patch WS$\rightarrow$CNN head & spatial-map screen & $0.909 \pm 0.053$ & 0.809 & key spatial-map lever \\
+CNN tight crop (frozen$\rightarrow$logreg) & CNN screen & $0.906 \pm 0.042$ & 0.815 & strong comparator \\
+Region-aware WS (classical logreg) & region-aware extension & $0.892 \pm 0.041$ & 0.806 & regions without learned head \\
+Whole-patch feature fusion (CNN+WS) & fusion screen & $0.882 \pm 0.043$ & 0.790 & strongest whole-patch fusion screen \\
+Pooled $3{\times}3$ + Cohen's $d$ logreg & appendix control & $0.878 \pm 0.040$ & 0.809 & promising but noisy \\
+Pooled $2{\times}2$ + PCA/RBF-SVM & WS screen & $0.861 \pm 0.080$ & 0.792 & best hand-pooled mass WS \\
+Whole-patch late-probability fusion & fusion screen & $0.858 \pm 0.046$ & 0.760 & no robust whole-patch fusion gain \\
+CNN square crop (frozen$\rightarrow$logreg) & CNN screen & $0.857 \pm 0.059$ & 0.808 & stable comparator \\
+CNN expanded crop & CNN screen & $0.820 \pm 0.042$ & 0.766 & context dilution \\
+CNN + WS fusion (paper-style concat) & replication & $0.816 \pm 0.057$ & 0.792 & best strict replication model \\
+Tensor-distance cosine 1-NN & appendix control & $0.807 \pm 0.049$ & 0.734 & heavier, no gain \\
+Razali WS-only / CNN-only & paper benchmark & 0.800 / 0.800 & 0.833 / 0.833 & published references \\
+Pooled $2{\times}2$ + Cohen's $d$ & WS screen & $0.798 \pm 0.029$ & 0.722 & modest structured pooling gain \\
+WS full-map flatten ($J{=}6$) & appendix control & $0.788 \pm 0.072$ & 0.724 & no reliable gain \\
+WS input z-score normalisation & normalisation control & $0.781 \pm 0.042$ & 0.750 & dropped \\
+CNN-only (ResNet18$\rightarrow$kNN) & replication & $0.762 \pm 0.117$ & 0.766 & unstable small-sample CNN \\
+Scattering covariance ($J{=}6,L{=}3$) & WS extension & $0.734 \pm 0.062$ & 0.682 & no meaningful mass AU-ROC gain \\
+WS-only (averaged) & replication & $0.726 \pm 0.030$ & 0.701 & weak mass WS baseline \\
+WS $S_0$ normalisation & normalisation control & $0.721 \pm 0.051$ & 0.750 & dropped \\
+WS full-map adaptive-PCA & appendix control & $0.684 \pm 0.042$ & 0.733 & underperforms \\
+Majority baseline & baseline & 0.500 & 0.668 & accuracy misleading \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.98\textwidth]{../data/outputs/report_figures/all_methods_mass_auroc.png}
+\caption{Mass task master comparison as a horizontal AU-ROC bar chart. Error bars show across-seed standard deviation for project methods; Razali paper rows are single reported values. Unlike the tissue task, scalar WS variants cluster near the averaged-WS baseline, while spatial-map-preserving WS$\rightarrow$CNN and its late fusion variants form the strongest group.}
+\label{fig:all_methods_mass}
+\end{figure}
+
+\section{Scattering Covariance as the Tissue-Side Extension (Supervisor-Suggested)} \label{sec:scov_tissue}
+
+\subsection*{Motivation}
+The WS-only baseline (Section~\ref{sec:stage1}) trails the paper's reported result by roughly $7$~pp on the tissue task and, as later stages will show, gives a relatively weak mass-classification result. With strict paper-replication established as a reference point, the project supervisor recommended exploring the scattering covariance methodology of Cheng \& M\'enard~\cite{cheng2021scattering} as a richer texture representation. The supervisor explicitly warned against the alternative of simply flattening the full scattering tensor and applying PCA --- a non-canonical operation that would conflict with the mathematical construction of the scattering transform. We therefore investigated scattering covariance as an extension that:
+\begin{itemize}
+    \item adds higher-order cross-correlation statistics on top of the standard $S_0, S_1, S_2$ coefficients;
+    \item is mathematically principled (defined in terms of spatial averages of products of scattering fields, not flattened spatial maps);
+    \item is directly applicable to texture / field analysis, which matches the mammogram patch setting.
+\end{itemize}
+This direction is consistent with the foundational scattering analysis: Bruna and Mallat \cite{bruna2013invariant} already show that it is the \emph{second-order, cross-path} structure of the scattering representation --- not the first-order coefficients alone --- that carries the discriminative higher-moment texture information (for instance, the information needed to separate textures with identical power spectra). Scattering covariance can be seen as making this cross-path structure explicit through dedicated correlation statistics, so the extension builds on, rather than departs from, the theory underpinning the Stage~1 baseline.
+
+This work was approached as an extension of, not a replacement for, the paper-aligned averaged-WS baseline of Section~\ref{sec:stage1}. That baseline remains the faithful Razali replication; the present section explores whether the WS branch can be improved beyond it.
+
+\subsection*{Scattering covariance --- what it is and why we used it}
+The standard Mallat-style scattering transform used in Stage~1 retains the zeroth-, first-, and second-order spatial averages $S_n = \langle I_n(\vec{x}) \rangle$ of the cascaded wavelet-modulus fields (Section~\ref{sec:ws}). Cheng \& M\'enard's scattering covariance adds further \emph{scalar} summary statistics computed from products of these scattering fields --- principally $P_{00}$ (power per wavelet band), $C_{01}$ (cross-correlations between the input and its modulus fields), $C_{11}$ (cross-correlations between pairs of modulus fields), and $P_{11}$ (autocorrelations of modulus fields). Each of these is defined as a spatial average of a product of scattering fields, so the output is a tensor of scalars indexed by scale and orientation tuples, never a stack of spatial maps. The supervisor's no-flattening constraint is therefore satisfied by construction: there is no tensor to flatten.
+
+For an isotropic stochastic texture (which mammogram patches roughly are), Cheng's paper recommends the \emph{rotationally-averaged} vector \texttt{for\_synthesis\_iso}: $\{\text{mean}, \text{std}, \log P_{00\,\text{iso}}, \log S_{1\,\text{iso}}, C_{01\,\text{iso}}, C_{11\,\text{iso}}\}$ with first-order orientation averaged out and second-order orientation differences retained. This is the scalar feature vector we use throughout this section.
+
+\textbf{Adapted vs.\ direct usage.} Two configurations were evaluated. \emph{Adapted} runs use the Cheng \texttt{scattering\_cov} API with parameters matched to the project's existing WS configuration ($J=6$, $L=5$ initially, later tuned --- see the ablation below). \emph{Direct} runs use the same API with $L=4$, the default value in the Cheng package's example script. Both use the same Subspace k-NN ensemble (80 learners, dim~$190$, 1-NN) on top, the same image-level $80/20$ train/test split, and the same group-aware $10$-fold cross-validation as Stage~1, so the comparison is on equal footing.
+
+\subsection*{Initial four-way comparison (tissue task)}
+The first scattering covariance experiment compared four methods on the fatty-vs-fibroglandular task: the original WS (Stage~1), the adapted scattering covariance at $J=6, L=5$, the direct Cheng usage at $J=6, L=4$, and the paper's reported WS-only number (Razali Table~6 Model~2, reproduced from publication).
+
+\begin{table}[h]
+\centering
+\caption{Tissue task --- WS comparison under the five-seed protocol (AU-ROC and test accuracy as mean~$\pm$~std; CV is seed-34 group-aware accuracy). ``Ours'' rows use identical patches, splits, scaler, and classifier. The Razali row is the published WS-only result and is not apples-to-apples (different library, preprocessing, patch counts, CV scheme); it is a reference, not a head-to-head competitor. Source: \texttt{supporting\_extensions\_results.csv}, \texttt{scov\_JL\_ablation\_tissue.csv}.}
+\label{tab:scov_tissue_initial}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Method} & \textbf{AU-ROC} & \textbf{Test} & \textbf{CV (seed 34)} & \textbf{F1} \\
+\midrule
+Original WS (Kymatio, 406-d)                        & $0.895 \pm 0.070$ & $0.839 \pm 0.071$ & $0.812$ & 0.807 \\
+Adapted scattering cov.\ ($J{=}6, L{=}5$, 1518-d)   & $0.977 \pm 0.016$ & $0.923 \pm 0.031$ & $0.923$ & 0.908 \\
+Adapted scattering cov.\ ($J{=}6, L{=}3$, 580-d)    & $0.984 \pm 0.010$ & $0.959 \pm 0.013$ & $0.962$ & 0.951 \\
+Direct Cheng ($J{=}6, L{=}4$, 993-d)                & $0.982 \pm 0.015$ & $0.943 \pm 0.024$ & $0.959$ & 0.932 \\
+Razali (2023) WS-only (reported, 391-d)             & $0.94$ & $0.914$ & $0.911$ & 0.910 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{What the comparison shows.} All scattering covariance variants substantially exceed the original averaged WS on tissue (AU-ROC $0.895 \rightarrow 0.977$--$0.984$; test accuracy $0.839 \rightarrow 0.923$--$0.959$). The variants differ mainly in the orientation parameter $L$, so rather than simply adopting whichever scored highest on one metric we tuned $J$ and $L$ systematically (below), ranking by the more stable seed-34 group-aware CV.
+
+\subsection*{Parameter ablation --- tuning $J$ and $L$ for scattering covariance}
+The scattering transform has two principal hyperparameters: $J$ (maximum dyadic scale; $2^J$ is the invariance scale in pixels) and $L$ (number of wavelet orientations). The Cheng paper does not prescribe specific values; Razali used the MATLAB toolbox defaults ($J=6$, $L=6$) without ablation; the Cheng example script uses $L=4$ on $512$-pixel inputs. Given that the project's goal had shifted from strict replication to obtaining the best defensible scattering-based result, we performed a small grid search over $J$ and $L$, ranking candidates by $10$-fold group-aware CV mean (the most stable estimator on this sample size) with CV standard deviation as a tiebreaker. The search range was deliberately small and physically motivated; both axes were swept on the training partition only (no test-set peeking).
+
+\paragraph{$L$ sweep at fixed $J=6$.}
+
+\begin{table}[h]
+\centering
+\caption{$L$ sweep at fixed $J=6$ for the adapted scattering covariance, tissue task, five-seed protocol. CV is the seed-34 group-aware mean; AU-ROC and test accuracy are five-seed means. Source: \texttt{scov\_JL\_ablation\_tissue.csv}.}
+\label{tab:scov_L_sweep}
+\begin{tabular}{cccccc}
+\toprule
+\textbf{$L$} & \textbf{\# feat.} & \textbf{CV} & \textbf{CV std} & \textbf{AU-ROC} & \textbf{Test} \\
+\midrule
+1 & 90   & 0.958 & 0.031 & 0.950 & 0.950 \\
+2 & 279  & 0.956 & 0.030 & 0.978 & 0.959 \\
+3 & 580  & \textbf{0.962} & \textbf{0.023} & \textbf{0.984} & 0.959 \\
+4 & 993  & 0.959 & 0.030 & 0.982 & 0.943 \\
+5 & 1518 & 0.923 & 0.042 & 0.977 & 0.923 \\
+6 & 2155 & 0.928 & 0.043 & 0.975 & 0.918 \\
+8 & 3765 & 0.918 & 0.056 & 0.964 & 0.921 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The $L$-sweep produces a clear picture. Cross-validation accuracy is highest at $L=3$ ($0.962 \pm 0.023$), with $L=1$ and $L=2$ within ${\sim}0.6$~pp on CV but at higher variance once $L \geq 5$. From $L=4$ onwards CV declines, and the held-out AU-ROC peaks at $L=3$ ($0.984$). Feature count grows from $90$ at $L=1$ to $3{,}765$ at $L=8$, and the high-dimensional settings coincide with higher CV variance, consistent with overfitting in the small-sample regime. $L=3$ is the most stable, parsimonious choice that achieves the top CV mean.
+
+\paragraph{$J$ sweep at fixed $L=3$.}
+
+\begin{table}[h]
+\centering
+\caption{$J$ sweep at fixed $L=3$, tissue task, five-seed protocol. CV is the seed-34 group-aware mean; AU-ROC and test accuracy are five-seed means. Source: \texttt{scov\_JL\_ablation\_tissue.csv}.}
+\label{tab:scov_J_sweep}
+\begin{tabular}{cccccc}
+\toprule
+\textbf{$J$} & \textbf{\# feat.} & \textbf{CV} & \textbf{CV std} & \textbf{AU-ROC} & \textbf{Test} \\
+\midrule
+3 & 115 & 0.948 & 0.017 & 0.928 & 0.931 \\
+4 & 219 & 0.951 & 0.028 & 0.958 & 0.941 \\
+5 & 371 & 0.950 & 0.033 & 0.971 & 0.941 \\
+6 & 580 & \textbf{0.962} & \textbf{0.023} & 0.984 & 0.959 \\
+7 & 855 & 0.960 & 0.035 & \textbf{0.985} & 0.957 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.95\textwidth]{../data/outputs/final_step2_3_supporting_extensions/scov_JL_ablation_tissue.png}
+\caption{Tissue scattering-covariance ablation (\textit{FINAL Step~2.3}): seed-34 group-aware CV accuracy versus $L$ at fixed $J=6$ (left) and versus $J$ at fixed $L=3$ (right). CV peaks at $L=3$ and $J=6$; larger $L$ raises dimensionality and CV variance without improving accuracy.}
+\label{fig:scov_JL}
+\end{figure}
+
+The $J$-sweep is flatter than the $L$-sweep. CV clusters between $0.948$ and $0.962$, with $J=6$ at the top; held-out AU-ROC rises gently with $J$ (to $0.984$ at $J=6$ and $0.985$ at $J=7$) while CV variance grows. The choice $J=6$ gives the best CV with the lowest variance among the leading settings.
+
+\paragraph{Final adapted configuration.} The ablation selects $\boldsymbol{J = 6}, \boldsymbol{L = 3}$ as the project's adapted scattering covariance setting. It wins on CV mean ($0.962$), gives the lowest CV standard deviation among the top candidates ($0.023$), a strong five-seed held-out AU-ROC ($0.984$) and test accuracy ($0.959$), and the smallest feature count of the leading configurations ($580$, ${\sim}60\%$ smaller than the original $L=5$ setting). The choice is data-driven via CV-based selection on the training partition; it deviates from Razali's MATLAB-default $L=6$ but is well justified by the small-sample regime, where higher-dimensional scattering representations give less stable nearest-neighbour distances.
+
+\subsection*{Mass task: scattering covariance gives no AU-ROC gain}
+The chosen adapted configuration was also applied to the benign-vs-malignant mass task under the same five-seed protocol (Table~\ref{tab:scov_mass}). Here the tissue success does \emph{not} transfer.
+
+\begin{table}[h]
+\centering
+\caption{Mass task --- scattering covariance vs.\ averaged WS, five-seed protocol (AU-ROC and test accuracy mean~$\pm$~std; $115$ patches, $24$-patch held-out split). Source: \texttt{supporting\_extensions\_results.csv}.}
+\label{tab:scov_mass}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{AU-ROC} & \textbf{Test} & \textbf{F1} \\
+\midrule
+Averaged WS (Mallat, 406-d)                        & $0.726 \pm 0.030$ & $0.701 \pm 0.075$ & 0.781 \\
+Adapted scattering cov.\ ($J{=}6, L{=}5$, 1518-d)  & $0.645 \pm 0.072$ & $0.622 \pm 0.079$ & 0.695 \\
+Adapted scattering cov.\ ($J{=}6, L{=}3$, 580-d)   & $0.734 \pm 0.062$ & $0.682 \pm 0.115$ & 0.732 \\
+Direct Cheng ($J{=}6, L{=}4$, 993-d)               & $0.654 \pm 0.055$ & $0.617 \pm 0.083$ & 0.688 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{The mass picture is the opposite of the tissue picture.} The best scattering-covariance setting on mass ($J=6, L=3$, AU-ROC $0.734 \pm 0.062$) is statistically indistinguishable from the averaged-WS baseline ($0.726 \pm 0.030$), and the other settings are lower. The richer scalar covariance therefore does \emph{not} solve the mass task: it reshapes the precision/recall trade-off but lowers F1 relative to the baseline (0.732 vs.\ 0.781) and adds no meaningful discriminative power by AU-ROC.
+
+A small mass-side $L$-control at $J=6$ confirms this is not a tuning artefact (Table~\ref{tab:scov_mass_L}): no orientation count rescues mass scattering covariance --- the best, $L=3$, merely returns to the averaged-WS baseline. This is an $L$-only control at $J=6$, \emph{not} a full mass $J\times L$ grid; a full grid would over-invest in a representation that is, on this task, a dead end. The mass gains instead come from preserving spatial/lesion structure (Section~\ref{sec:region_aware}), not from richer scalar statistics.
+
+\begin{table}[h]
+\centering
+\caption{Mass-side $L$-control for scattering covariance at fixed $J=6$ (five-seed AU-ROC; negative control). No $L$ meaningfully beats the averaged-WS baseline of $0.726$. Source: \texttt{scov\_L\_ablation\_mass.csv}.}
+\label{tab:scov_mass_L}
+\begin{tabular}{cccc}
+\toprule
+\textbf{$L$} & \textbf{\# feat.} & \textbf{AU-ROC} & \textbf{Test} \\
+\midrule
+1 & 90   & $0.544 \pm 0.103$ & 0.609 \\
+2 & 279  & $0.642 \pm 0.051$ & 0.649 \\
+3 & 580  & $0.734 \pm 0.062$ & 0.682 \\
+4 & 993  & $0.654 \pm 0.055$ & 0.617 \\
+5 & 1518 & $0.645 \pm 0.072$ & 0.622 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The earlier development notebooks reported a single-seed mass result that appeared to show a covariance ``jump'' (test $0.708$ against an unusually low averaged-WS single split of $0.542$); under the seed-99 five-seed protocol that apparent jump disappears, as the averaged WS recovers to $0.701$ test / $0.726$ AU-ROC. We therefore treat scattering covariance as a \emph{tissue-side} extension only, and any comparison to Razali's reported mass number remains not apples-to-apples (different library, preprocessing, patch counts, and a $\sim$24-patch held-out set).
+
+\subsection*{Conclusion: scattering covariance is the tissue-side WS extension}
+The supervisor-suggested scattering covariance extension delivers a clear, defensible improvement over averaged WS \emph{on the tissue task}, and is adopted as the project's main WS-branch tissue representation:
+\begin{center}
+\textbf{Adapted scattering covariance, $J = 6$, $L = 3$, \texttt{for\_synthesis\_iso}, with StandardScaler + Subspace k-NN ensemble.}
+\end{center}
+This configuration:
+\begin{itemize}
+    \item gives the highest CV mean ($0.962$) and lowest CV variance ($0.023$) of any WS-branch method tested for the tissue task, with five-seed held-out AU-ROC $0.984$;
+    \item exceeds the averaged WS baseline on tissue by $+0.089$ AU-ROC ($0.895 \rightarrow 0.984$) and $+0.120$ test accuracy ($0.839 \rightarrow 0.959$);
+    \item gives \emph{no meaningful} AU-ROC gain on mass ($0.734$ vs.\ the $0.726$ averaged-WS baseline), so it is adopted on the tissue side only;
+    \item respects the supervisor's no-flattening constraint by construction (the output is a scalar coefficient vector, not a flattened spatial tensor);
+    \item is parsimonious ($580$ features, versus $1{,}518$ at $L=5$ and the averaged WS's $406$);
+    \item is selected by CV-based hyperparameter tuning on the training partition only, with no test-set peeking.
+\end{itemize}
+The Direct Cheng implementation ($J=6, L=4$) is retained as an independent sensitivity check, confirming the tissue result is not specific to the $L=3$ choice; the Mallat-scattering implementation remains the faithful paper-aligned baseline. Both feed the cross-method summary (Section~\ref{sec:summary_results}).
+
+\textbf{Decision.} Scattering covariance is adopted as the improved WS representation \emph{for tissue}; the averaged WS continues to serve as the paper-replication reference. Because it does not help mass, the mass task is taken up separately by the region-aware extension (Section~\ref{sec:region_aware}). Reproducing CNN+WS fusion on top of scattering-covariance features is identified as natural further work but is out of the current scope.
+
+\section{Region-aware wavelet scattering (mass)} \label{sec:region_aware}
+
+The project's main mass-side extension is to \emph{preserve the scattering spatial map and learn over it with a small CNN} (\textit{FINAL Step~2.4}). Its premise (Section~\ref{sec:why_extension}) is that averaged WS fails on mass because it discards \emph{where} lesion structure lies; rather than enrich a scalar descriptor --- as scattering covariance does for tissue --- this approach keeps the scattering \emph{maps} at a lower invariance scale and lets a small CNN learn over them. The lesion-relative \emph{region-aware} decomposition described below is the interpretable, morphology-conditioned instantiation of that idea; as the ablation will show, the measured accuracy comes mainly from preserving the map and learning over it, with the region split adding interpretability rather than a proven numerical gain.
+
+\subsection*{Construction}
+The machinery is described in Section~\ref{sec:region_aware_method}: each lesion's XML polygon is rasterised to a mask, from which four lesion-relative regions (\emph{full}, \emph{inner} core, \emph{boundary}/margin annulus, and surrounding \emph{context}) are derived by erosion/dilation; each region is scattered at $J=3$ (retaining $91$ channels on a $28\times28$ grid); the four region maps are stacked ($4\times91$ channels) and fed either to pooled classical classifiers or to a small WS-map CNN head. Keeping $J=3$ rather than the paper's $J=6$ is the key choice: it preserves a usable spatial grid instead of collapsing each map to a near-scalar.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.98\textwidth]{../data/outputs/recovered_region_aware_ws_cnn/region_images_example.png}
+\caption{Region-aware decomposition of a single mass lesion (malignant; file\_id 22614431). From the lesion mask, four lesion-relative region images are formed \emph{before} wavelet scattering: the \emph{full} whole-lesion crop, the \emph{inner} eroded core, the \emph{boundary} margin band (dilation minus erosion), and the surrounding \emph{context}. The leftmost panel shows the crop with the eroded-core outline (cyan) and the dilated lesion-plus-margin outline (red). Each region is scattered at $J=3$ and the four region maps are stacked, so the descriptor is conditioned on lesion morphology rather than averaged over the whole patch.}
+\label{fig:region_images}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.98\textwidth]{../data/outputs/recovered_region_aware_ws_cnn/ws_map_vs_average_example.png}
+\caption{Why paper-style averaging discards spatial information. For an example mass patch (left), the wavelet scattering transform at $J=3$ produces $91$ coefficient maps of size $28\times28$ (three shown, centre), each encoding \emph{where} that scale/orientation responds within the lesion. The paper-style averaged WS keeps only the spatial \emph{mean} of each map --- one scalar per coefficient (right) --- collapsing all $28\times28$ structure to a point. The region-aware extension instead retains these maps and conditions them on lesion regions.}
+\label{fig:ws_map_vs_average}
+\end{figure}
+
+\subsection*{Step-by-step results}
+Table~\ref{tab:region_story} walks one change at a time from the paper-style baseline to the region-aware models, all under the five-seed image-level protocol; Figure~\ref{fig:region_story} plots the same progression.
+
+\begin{table}[h]
+\centering
+\caption{Mass task: region-aware extension story, five-seed image-level protocol (AU-ROC mean~$\pm$~std). Source: \textit{FINAL Step~2.4}, \texttt{recovered\_region\_aware\_ws\_cnn/mass\_extensions\_story\_table.csv}.}
+\label{tab:region_story}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Method} & \textbf{AU-ROC} & \textbf{Test Acc.} \\
+\midrule
+Paper-style WS @\,$J{=}6$ (averaged, k-NN)                  & $0.726 \pm 0.030$  & $0.701$ \\
+Whole-patch WS @\,$J{=}3$ maps $\rightarrow$ k-NN           & $0.670 \pm 0.068$  & $0.709$ \\
+Whole-patch WS @\,$J{=}3$ maps $\rightarrow$ logreg         & $0.801 \pm 0.052$  & $0.733$ \\
+Region-aware WS (classical, k-NN)                           & $0.757 \pm 0.077$  & $0.789$ \\
+Region-aware WS (classical, logreg)                         & $0.892 \pm 0.041$  & $0.806$ \\
+Region-aware WS $\rightarrow$ CNN head $\bigstar$           & $0.946 \pm 0.036$  & $0.899$ \\
+Improved CNN (square crop, frozen ResNet18)                & $0.857 \pm 0.059$  & $0.808$ \\
+Late fusion (region-aware WS$\rightarrow$CNN $\oplus$ improved CNN) & $0.948 \pm 0.033$  & $0.883$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.95\textwidth]{../data/outputs/recovered_region_aware_ws_cnn/mass_extensions_story.png}
+\caption{Mass task, region-aware extension story (five-seed AU-ROC). Each step changes one thing: lowering the invariance scale to $J=3$ and switching to a linear head lifts whole-patch WS from $0.726$ to $0.801$; decomposing the lesion into regions lifts the classical model to $0.892$; a learned WS-map CNN head reaches $0.946$; and a decision-level late fusion with a frozen-ResNet comparator reaches $0.948$.}
+\label{fig:region_story}
+\end{figure}
+
+The progression is monotone and interpretable. Moving from $J=6$ averaged WS to $J=3$ \emph{maps} with a linear head already raises AU-ROC from $0.726$ to $0.801$ --- spatial detail helps even on the whole patch. Conditioning on lesion regions raises the classical (logistic-regression) model further to $0.892$, and letting a small CNN learn over the region maps reaches $0.946 \pm 0.036$. Under the updated five-seed protocol, this all-four-region WS-map CNN is the strongest \emph{standalone} mass-side model in the project; only the later decision-level late fusion is numerically higher, and that is an ensemble of two trained branches. A small CNN over the \emph{whole-patch} $J=3$ map --- with no region decomposition at all --- reaches $0.909 \pm 0.053$ (Table~\ref{tab:master_mass}), so the decisive step remains preserving the map and learning over it; the lesion-region decomposition now gives an additional numerical lift while also making the descriptor morphology-aware.
+
+A region ablation (\textit{FINAL Step~2.4}, Table~\ref{tab:region_ablation}) tests what the four-region decomposition actually contributes. Every configuration that retains a $J=3$ map and learns over it sits far above the averaged-WS baseline ($0.726$), but the strongest rows are now the complete all-four-region tensor ($0.946$), the full+inner pair ($0.940$), and the leave-one-out variant that drops the boundary band ($0.939$). The strong configurations still overlap within across-seed spread, so the region ordering should not be over-read. The robust conclusion is that \emph{preserving the spatial map and learning over it} is the main lever; using all four lesion-relative regions is a principled and currently strongest complete representation because it encodes the lesion core, margin, whole lesion, and surrounding context.
+
+\begin{table}[h]
+\centering
+\caption{Region ablation for the WS$\rightarrow$CNN head (five-seed AU-ROC; selected rows). Every configuration sits well above the averaged-WS baseline ($0.726$), but differences among the stronger ones are within seed noise. Source: \texttt{region\_ws\_ablation/region\_ablation\_cnnhead\_results.csv}.}
+\label{tab:region_ablation}
+\begin{tabular}{lc}
+\toprule
+\textbf{Region configuration} & \textbf{AU-ROC} \\
+\midrule
+ALL four (full+inner+boundary+context)    & $0.946 \pm 0.032$ \\
+Full + inner                              & $0.940 \pm 0.013$ \\
+Drop boundary (full+inner+context)        & $0.939 \pm 0.031$ \\
+Full + boundary                           & $0.933 \pm 0.035$ \\
+Drop context (full+inner+boundary)        & $0.931 \pm 0.018$ \\
+Context only                              & $0.926 \pm 0.031$ \\
+Inner only                                & $0.922 \pm 0.030$ \\
+Full region only                          & $0.904 \pm 0.059$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection*{Stability of the learned head.}
+Because the WS-map CNN is a \emph{learned} model trained on only ${\sim}90$ patches, its five-seed held-out AU-ROC still carries split sensitivity ($\pm 0.036$). A group-aware $10$-fold cross-validation diagnostic gives a tighter estimate, AU-ROC $0.938 \pm 0.007$, confirming that the held-out mean is not a lucky split. We report both, and treat the held-out five-seed mean as the headline with the group-CV as the stability check (Section~\ref{sec:discussion}).
+
+\subsection*{Master comparison.}
+Table~\ref{tab:master_mass} places the region-aware models against the paper-style replication and the strongest supporting extensions on the mass task.
+
+\begin{table}[h]
+\centering
+\caption{Mass task --- master comparison across families, five-seed image-level protocol (AU-ROC mean~$\pm$~std), drawn from the FINAL Step~2.1--2.4 outputs. ``Status'' indicates the method's role in the project narrative.}
+\label{tab:master_mass}
+\small
+\begin{tabular}{p{5.6cm}p{1.7cm}p{1.2cm}p{3.0cm}}
+\toprule
+\textbf{Method} & \textbf{AU-ROC} & \textbf{Test} & \textbf{Status} \\
+\midrule
+Majority baseline                                  & $0.500$           & $0.668$ & baseline \\
+Paper-style WS (averaged)                          & $0.726 \pm 0.030$ & $0.701$ & replication \\
+Paper-style CNN (ResNet18 $\rightarrow$ k-NN)      & $0.762 \pm 0.117$ & $0.766$ & replication \\
+Paper-style CNN + WS fusion (concat)               & $0.816 \pm 0.057$ & $0.792$ & replication \\
+Scattering covariance ($J{=}6,L{=}3$)              & $0.734 \pm 0.062$ & $0.682$ & extension (tissue-side; no mass gain) \\
+Pooled $2{\times}2$ + PCA/RBF-SVM                   & $0.861 \pm 0.080$ & $0.792$ & supporting \\
+Full-patch WS $\rightarrow$ CNN                     & $0.909 \pm 0.053$ & $0.809$ & \textbf{spatial-map preservation (key lever)} \\
+Region-aware WS (classical, logreg)                & $0.892 \pm 0.041$ & $0.806$ & extension \\
+Region-aware WS $\rightarrow$ CNN $\bigstar$        & $0.946 \pm 0.036$ & $0.899$ & interpretable lesion-aware instantiation \\
+Improved CNN (square crop, frozen)                 & $0.857 \pm 0.059$ & $0.808$ & comparator \\
+Region-aware late fusion                            & $0.948 \pm 0.033$ & $0.883$ & numerically strongest \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Interpretation.} Late fusion is the numerically strongest configuration in the table ($0.948$), but it is a decision-level \emph{combination} of two models, and on this small mass set its margin over the region-aware WS$\rightarrow$CNN model alone ($0.946$, group-CV $0.938$) is negligible relative to across-seed noise. We therefore do \emph{not} present late fusion as the project's core contribution. The methodological contribution is \emph{preserving the wavelet-scattering spatial map and learning over it with a small CNN}: this is what turns the weak averaged-WS branch ($0.726$ AU-ROC) into a strong mass descriptor --- the whole-patch $J=3$-map CNN reaches $0.909$, and the lesion-region decomposition lifts this to $0.946$ while adding morphological interpretability. The classical pooled variants, the improved-CNN comparator, and late fusion support that story rather than replace it.
+
+\section{Supporting mass extensions: CNN crops and fusion} \label{sec:supporting_ext}
+
+Alongside the WS-representation work, two CNN-side levers were screened on mass (\textit{FINAL Step~2.3}); both support the region-aware story rather than supplant it.
+
+\textbf{Crop / context sweep with a frozen ResNet18.} The fine-tuned ResNet18 of the replication overfits the ${\sim}90$ mass patches and swings widely across seeds, so a \emph{frozen} ImageNet ResNet18 was used as a fixed $512$-d feature extractor with a logistic-regression head, varying only the crop:
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Crop} & \textbf{AU-ROC} & \textbf{Test Acc.} \\
+\midrule
+Tight bounding box              & $0.906 \pm 0.042$ & $0.815 \pm 0.039$ \\
+Square crop                     & $0.857 \pm 0.059$ & $0.808 \pm 0.054$ \\
+Expanded ($1.5\times$) context  & $0.820 \pm 0.042$ & $0.766 \pm 0.078$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+The frozen extractor is far more stable than the fine-tuned model, and logistic regression beats RBF-SVM and Subspace k-NN on these features. The tight box scores the highest AU-ROC, but tight and square overlap within the across-seed spread; the region-aware comparison (Section~\ref{sec:region_aware}) uses the \emph{square} crop as its ``improved CNN'' comparator ($0.857 \pm 0.059$) because it is the steadier controlled crop used throughout that notebook. Either way this is a stable comparator, not a mass solution.
+
+\textbf{Whole-patch fusion vs.\ region-aware fusion.} On the whole patch, two fusions of the frozen CNN with averaged WS were compared: feature/early fusion (concatenate the $512$-d CNN and $406$-d WS vectors, then one classifier) at AU-ROC $0.882 \pm 0.043$, and true late-probability fusion (average the two branches' predicted probabilities) at $0.858 \pm 0.046$. Feature fusion is the stronger of the two, but neither reaches the region-aware spatial-map branch. This is a \emph{different} construction from the region-aware late fusion of Section~\ref{sec:region_aware}, which combines the much stronger region-aware WS$\rightarrow$CNN ($0.946$) with the improved CNN and reaches $0.948 \pm 0.033$. Late fusion helps there precisely because one of its branches already preserves lesion structure: fusion amplifies a good spatial branch but cannot manufacture one from averaged features.
+
+\section{Wavelet scattering alternatives (appendix-level)} \label{sec:ws_alternatives}
+
+A further set of WS variants was tried and is preserved, with full provenance, in the appendix notebook \textit{FINAL Step~2.5}; none was adopted, so they are summarised here only briefly. Two \emph{flattening} approaches --- reshaping the scattering map into one long vector, and flatten-then-PCA --- were run explicitly as negative controls, because the supervisor had advised against flattening the scattering tensor; their results did not justify adoption, confirming the guidance. \emph{Tensor-distance} classifiers (1-NN under Frobenius/cosine distances on the standardised scattering tensor, and a channel-subspace vote) did not outperform the simple spatial-mean baseline and were markedly slower. Finally, $J$-sweep and grid-granularity experiments showed that the productive direction is \emph{lower}-$J$ spatial maps fed to a learned head --- exactly the route taken by the full-patch WS$\rightarrow$CNN (Section~\ref{sec:screening}) and the region-aware WS$\rightarrow$CNN (Section~\ref{sec:region_aware}) --- rather than richer flattening or distance metrics. These appendix methods document the breadth of the search and the negative results that justify the narrower set of methods reported above.
+
+\section{Preprocessing sensitivity: masked/no-CLAHE inputs} \label{sec:preproc_sensitivity}
+
+\subsection*{Motivation}
+
+After the paper-style replication and the region-aware extensions were complete, a final sensitivity question remained: how much of the WS behaviour was caused by the \emph{amount of preprocessing} applied before patch extraction? The supervisor suggested using preprocessing primarily to identify coordinates and relevant regions, then extracting the classification patches from less-altered images. This was motivated by the fact that wavelet scattering is texture- and structure-sensitive: operations such as CLAHE can sharpen local contrast and help visual inspection, but they may also alter the coefficient energy that scattering uses for classification.
+
+This was treated as an extension and sensitivity analysis, not as a replacement for the paper-style replication. The main replication remains the faithful Razali-aligned pipeline; the aim here was to test whether a lighter input representation explains some of the remaining reproduction gap and whether it changes the mass-side region-aware extension.
+
+\subsection*{Initial pixel-source screen}
+
+The first test reused the existing preprocessing-derived patch coordinates and labels, but changed the pixel source from which the patch was extracted. Four sources were compared in \textit{FINAL Step~2.6}: the current fully preprocessed images; original DICOM pixels with simple min--max scaling (\texttt{raw\_minmax}); original DICOM pixels with only 1st/99th percentile scaling (\texttt{raw\_percentile}); and \texttt{masked\_no\_clahe}. The last variant means: 1st/99th percentile normalisation, breast/background masking, and pectoral-region removal, but \emph{no} CLAHE contrast enhancement.
+
+The useful effect was concentrated in the \emph{mass WS-only} setting (Table~\ref{tab:preproc_mass_ws}). Tissue WS did not improve: the current full-preprocessing row remained closest to the Razali tissue WS reference (AU-ROC $0.895$ vs.\ the paper's $0.940$), while raw or lighter variants fell to $0.881$ or $0.812$. CNN-only and CNN/fusion sensitivity checks were also inconclusive: some settings moved AU-ROC closer to the paper and others moved test accuracy closer, but no CNN variant matched both. This is why the remainder of the preprocessing investigation focuses on mass WS and region-aware WS-map methods.
+
+\begin{table}[h]
+\centering
+\caption{Mass WS-only preprocessing sensitivity (\textit{FINAL Step~2.6}). The same sampled coordinates and labels are used throughout; only the image source changes. AU-ROC and test accuracy are five-seed mean~$\pm$~standard deviation. Razali is included as a paper reference. Source: \texttt{ws\_pixel\_source\_variant\_summary.csv}.}
+\label{tab:preproc_mass_ws}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Pixel source} & \textbf{AU-ROC} & \textbf{Test Acc.} \\
+\midrule
+Current full preprocessing & $0.726 \pm 0.030$ & $0.701 \pm 0.075$ \\
+Raw min--max only & $0.797 \pm 0.021$ & $0.700 \pm 0.073$ \\
+Raw percentile only & $0.779 \pm 0.045$ & $0.716 \pm 0.073$ \\
+Masked/no CLAHE & $0.805 \pm 0.045$ & $0.741 \pm 0.057$ \\
+Razali WS-only (paper) & $0.800$ & $0.833$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+By AU-ROC alone, raw min--max is closest to Razali ($0.797$ vs.\ $0.800$). However, \texttt{masked\_no\_clahe} is the best balanced limited-preprocessing variant: it is still essentially tied to the paper's AU-ROC ($0.805$ vs.\ $0.800$) and gives the highest test accuracy among the tested alternatives. This suggests that CLAHE is the step most likely to be distorting mass WS texture information: keeping the anatomical masking while removing contrast enhancement preserves enough breast/pectoral cleanup without imposing an additional local contrast transform.
+
+\subsection*{Region-aware WS-map CNN with masked/no-CLAHE inputs}
+
+Because the useful effect appeared in mass WS, the next test repeated the region-aware WS-map CNN pipeline with \texttt{masked\_no\_clahe} inputs. The setup was otherwise unchanged from Section~\ref{sec:region_aware}: the same 115 mass samples, the same XML mass polygons, the same four lesion-relative regions (\emph{full}, \emph{inner}, \emph{boundary}, \emph{context}), the same $J=3,L=5$ spatial scattering tensors, and the same small CNN head. Only the pixel source used to build the region images changed.
+
+Table~\ref{tab:preproc_region_all_four} shows that removing CLAHE improved the all-region model on every headline metric: AU-ROC rose from $0.946$ to $0.971$, test accuracy from $0.899$ to $0.925$, and F1 from $0.923$ to $0.943$. The standard deviations also narrowed, suggesting that the improvement is not only a single favourable split.
+
+\begin{table}[h]
+\centering
+\caption{Region-aware WS maps $\rightarrow$ CNN head: current full-preprocessed inputs vs.\ masked/no-CLAHE inputs. Both rows use the all-four-region tensor (\emph{full+inner+boundary+context}) and the same five-seed protocol. Source: \texttt{region\_aware\_masked\_no\_clahe\_vs\_current\_comparison.csv}.}
+\label{tab:preproc_region_all_four}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Input style} & \textbf{AU-ROC} & \textbf{Test Acc.} & \textbf{F1} \\
+\midrule
+Current full preprocessing & $0.946 \pm 0.036$ & $0.899 \pm 0.060$ & $0.923 \pm 0.046$ \\
+Masked/no CLAHE & $0.971 \pm 0.019$ & $0.925 \pm 0.018$ & $0.943 \pm 0.016$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection*{Full region ablation under masked/no-CLAHE}
+
+The full region ablation was then repeated under the same \texttt{masked\_no\_clahe} input style (Table~\ref{tab:preproc_region_ablation}). This is the same ablation grid used in Section~\ref{sec:region_aware}: single regions, \emph{full+X} pairs, leave-one-out triples, and all four regions.
+
+\begin{table}[h]
+\centering
+\caption{Masked/no-CLAHE region ablation for the WS-map CNN head (five-seed protocol). The table is sorted by AU-ROC. Source: \texttt{region\_ablation\_masked\_no\_clahe\_cnnhead\_results.csv}.}
+\label{tab:preproc_region_ablation}
+\scriptsize
+\begin{tabular}{llccc}
+\toprule
+\textbf{Region configuration} & \textbf{Type} & \textbf{AU-ROC} & \textbf{Test Acc.} & \textbf{F1} \\
+\midrule
+Drop boundary (full+inner+context) & leave-one-out & $0.986 \pm 0.014$ & $0.900 \pm 0.038$ & $0.922 \pm 0.032$ \\
+Drop inner (full+boundary+context) & leave-one-out & $0.977 \pm 0.009$ & $0.908 \pm 0.019$ & $0.930 \pm 0.015$ \\
+Full + context & full+X & $0.974 \pm 0.032$ & $0.891 \pm 0.052$ & $0.911 \pm 0.046$ \\
+Drop context (full+inner+boundary) & leave-one-out & $0.973 \pm 0.008$ & $0.908 \pm 0.019$ & $0.931 \pm 0.013$ \\
+ALL four (full+inner+boundary+context) & all & $0.971 \pm 0.019$ & $0.925 \pm 0.018$ & $0.943 \pm 0.016$ \\
+Full + inner & full+X & $0.966 \pm 0.031$ & $0.909 \pm 0.045$ & $0.930 \pm 0.035$ \\
+Full only & single & $0.960 \pm 0.030$ & $0.858 \pm 0.067$ & $0.884 \pm 0.061$ \\
+Full + boundary & full+X & $0.957 \pm 0.018$ & $0.900 \pm 0.037$ & $0.921 \pm 0.031$ \\
+Inner only & single & $0.909 \pm 0.036$ & $0.806 \pm 0.090$ & $0.846 \pm 0.091$ \\
+Drop full (inner+boundary+context) & leave-one-out & $0.908 \pm 0.052$ & $0.825 \pm 0.052$ & $0.869 \pm 0.048$ \\
+Context only & single & $0.902 \pm 0.067$ & $0.792 \pm 0.104$ & $0.849 \pm 0.079$ \\
+Boundary only & single & $0.885 \pm 0.054$ & $0.760 \pm 0.066$ & $0.798 \pm 0.081$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The ablation strengthens, but also refines, the original region-aware conclusion. The broad conclusion still holds: the mass gain comes from preserving WS spatial maps and learning over them. Under masked/no-CLAHE, however, the strongest AU-ROC is obtained by \emph{dropping the boundary} ($0.986 \pm 0.014$), i.e.\ using full, inner, and context regions but excluding the margin band. This is consistent with the idea that the boundary region is the most sensitive to preprocessing artefacts: it is precisely where lesion edge, surrounding tissue, interpolation, and contrast enhancement interact. Removing CLAHE appears to make the spatial maps cleaner overall, but the boundary channel can still add noise for AU-ROC.
+
+At the same time, the all-four-region model gives the best balance of test accuracy and F1 ($0.925$ and $0.943$ respectively). Therefore the cautious reading is metric-dependent: \emph{drop boundary} is the best AU-ROC configuration, while \emph{all four regions} remains the most balanced and interpretable representation. This is why the main extension narrative does not need to be rewritten around a single ablation winner. The final insight is instead that preprocessing is not neutral for WS features: removing CLAHE improves the mass WS branch and the region-aware WS-map CNN, especially when the model is allowed to learn from preserved spatial scattering maps.
+
+
+% ============================================================
+% (Extension experiments)
+% ============================================================

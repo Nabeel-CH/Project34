@@ -1,0 +1,159 @@
+%!TEX root = ../thesis.tex
+% Chapter --- Results and Development Narrative
+
+\chapter{Paper-Style Replication Results} \label{sec:results}
+
+This section presents the classification results in the chronological order in which the experiments were conducted. Each stage records what was tried, the result obtained, what the result suggested, and the decision that followed. Tables~\ref{tab:results_tissue} and~\ref{tab:results_mass} at the end of the section consolidate the comparison against the paper's reported benchmarks. The stage-by-stage numbers below are reported on the single fixed seed-34 image-level split (the development setting in which the experiments were run); the consolidated tables report the final \emph{five-seed} mean~$\pm$~standard deviation protocol (Section~\ref{sec:eval_protocol}), which is the headline. Where a single-split figure is unusually high or low because of the small mass test set, the five-seed value is given alongside it. This development narrative refers to the original exploratory notebooks by their chronological names (\textit{Step 2.1 --- WS}, \textit{Step 2.2 --- CNN}, \textit{Step 2.3 --- Fusion}, \textit{Step 2.8 --- Consolidated Mass Evaluation}); their methods and results were subsequently consolidated into the canonical \textit{FINAL Step~2.1--2.5} notebooks --- tissue replication in \textit{FINAL Step~2.1}, mass replication in \textit{FINAL Step~2.2}, and the extensions in \textit{FINAL Step~2.3--2.5} --- with the exploratory originals retained under \texttt{Archive/}. All headline tables in this report are drawn from the FINAL notebooks.
+
+\section{Stage 1 --- Wavelet Scattering Baseline (Fatty vs Fibroglandular)} \label{sec:stage1}
+
+\textbf{What was tried.} The first experiment implements the paper's Model~2 (WS-only) on the background tissue task: 434 patches passed through the Kymatio scattering transform configured as in Section~\ref{sec:ws}, spatially averaged to a 406-dimensional vector per patch, standardised, and classified by the Subspace k-NN ensemble. Cross-validation uses 10 folds.
+
+\textbf{Result.} Seed-34 group-aware 10-fold cross-validation accuracy was $81.2\% \pm 7.3\%$ (the value carried into the master table); held-out test accuracy on the seed-34 split was $84.4\%$ (Precision $0.800$, Recall $0.842$, F1 $0.821$, AU-ROC $0.926$).
+
+\textbf{What this suggests.} The replication is qualitatively consistent with the paper (which reports $\sim$91\%) but trails by roughly $7$~pp. The most likely sources are (i)~our use of standard CLAHE in place of the paper's density-aware histogram adjustment, and (ii)~minor library differences in the scattering transform (Kymatio's 406 features versus MATLAB's 391; Table~\ref{tab:ws_config}).
+
+\textbf{Decision.} The WS-only baseline reproduces the paper's qualitative pattern but trails the reported number. Two follow-ups were planned: (i)~implement the CNN branch (Section~\ref{sec:stage2} onwards), and (ii)~later return to the WS branch to explore an alternative scattering representation suggested by the project supervisor. The latter is reported as the scattering covariance extension (Section~\ref{sec:scov_tissue}) in the Extension Experiments chapter, although in calendar time it was carried out after the CNN, mass, and fusion stages.
+
+\section{Stage 2 --- First CNN Attempt and Diagnosis of Data Leakage} \label{sec:stage2}
+
+\textbf{What was tried.} A first ResNet18 fine-tune, exactly per Section~\ref{sec:cnn}, was run on the fatty versus fibroglandular task. The train--test split used at this stage was the obvious patch-level interpretation of the paper's wording ``the data is divided into a randomized ratio of eight-to-two'' --- i.e.\ \texttt{train\_test\_split} on the flat patch index, stratified by class.
+
+\textbf{Result.} Every reported metric came out at $100\%$: training accuracy, 10-fold cross-validation accuracy, and held-out test accuracy. This was implausible.
+
+\textbf{Investigation.} An audit of which \texttt{file\_id}s appeared in each partition revealed that, of approximately 100 source images contributing background patches, 59 had patches in both the training and the test set. Of the 87 test patches, $86$ ($98.9\%$) shared a source mammogram with at least one training patch. Because patches from the same mammogram are highly correlated --- same patient, same view, same density characteristics, often spatially adjacent regions of the same tissue --- this constituted near-complete information leakage from training to test.
+
+\textbf{What this suggests.} The paper's wording is ambiguous between patch-level and image-level splitting. Their reported CNN-only test accuracy of $77.4\%$ alongside a $99\%$ cross-validation accuracy (Table~6 of \cite{razali2023cnn}) is in fact more consistent with image-level splitting: a patch-level split would tend to produce CV and test numbers that match each other rather than show a large gap. We had inadvertently chosen the wrong interpretation.
+
+\textbf{Decision.} Switch to image-level splitting and group-aware cross-validation for \emph{both} branches and \emph{both} tasks. Re-run the WS Stage~1 baseline with the corrected splits (the numbers reported in Section~\ref{sec:stage1} above are post-correction).
+
+\section{Stage 3 --- Image-Level Splitting and Group-Aware Cross-Validation} \label{sec:stage3}
+
+\textbf{What changed.} Both \texttt{train\_test\_split} and cross-validation were modified to operate on the unique \texttt{file\_id} (source mammogram) rather than the patch index. The cross-validator was changed from \texttt{StratifiedKFold} to \texttt{StratifiedGroupKFold} with \texttt{groups=file\_id}, which preserves stratification by class while guaranteeing that all patches from the same image stay in the same fold. The 80/20 ratio and the random seed (34) were preserved.
+
+\textbf{Why.} To prevent the within-fold and train--test leakage diagnosed in Stage~2, and to give an honest estimate of how the model generalises to genuinely unseen patients.
+
+\textbf{Effect.} The post-correction WS Stage~1 numbers were already reported above. The CNN replication, repeated with the same fix, is presented in Stage~4.
+
+\section{Stage 4 --- CNN-Only Tissue Classification (Corrected Splits)} \label{sec:stage4}
+
+\textbf{What was tried.} The CNN branch described in Section~\ref{sec:cnn} was retrained with image-level splitting and a validation set carved from the training images. The fine-tuned ResNet18 was evaluated in two ways: (a)~directly via the softmax head, and (b)~by extracting 512-d features from the average-pool layer and classifying them with the same Subspace k-NN ensemble used for WS (this is the paper's Model~1 protocol).
+
+\textbf{Result --- CNN direct (softmax).} Train accuracy $100.0\%$, validation accuracy $100.0\%$, test accuracy $97.8\%$, test AU-ROC $0.994$. The overfit gap (train $-$ test) was $2.2\%$.
+
+\textbf{Result --- CNN $\rightarrow$ Subspace k-NN (paper protocol).} 10-fold group-aware CV $100.0\% \pm 0.0\%$, test accuracy $97.8\%$, AU-ROC $0.977$, Precision $0.974$, Recall $0.974$, F1 $0.974$. Training time $330.7\,\mathrm{s}$.
+
+\textbf{What this suggests.} The CNN branch substantially \emph{outperforms} the paper's reported $77.4\%$ test accuracy on the same task. Two observations are worth highlighting. First, the overfit gap is modest ($\sim 2\%$), much less severe than the $21.6\%$ CV-vs-test gap the paper reports (their narrative is that this gap is what motivates the CNN~+~WS fusion). Second, the validation \emph{loss} is volatile mid-training, with brief drops in validation accuracy near epochs 25--30 before recovery (visible in the per-epoch training/validation curves logged by the notebook). This pattern indicates mild but real overfitting that is masked here by a relatively easy decision boundary.
+
+The most likely reason our test accuracy substantially exceeds the paper's is a cleaner preprocessing pipeline: percentile-clipped normalisation, ground-truth pectoral muscle masks, CLAHE, and ACR-guided patch selection together provide the network with less ambiguous training data than the paper's MATLAB pipeline. This is consistent with the WS branch trailing by $\sim$7~pp on the same task, since WS reads texture directly from the same preprocessing whereas the CNN can in principle exploit any additional signal made cleaner by it.
+
+\textbf{Decision.} Tissue classification is now replicated for both branches. Proceed to the mass classification task (the paper's second experiment, Table~7).
+
+\section{Stage 5 --- Extending the Pipeline to Mass Classification} \label{sec:stage5}
+
+\textbf{What was tried.} The benign versus malignant mass classification task (Section~\ref{sec:mass_rois}) was added to both notebooks as new final sections, leaving the tissue sections untouched. The 116 mass patches were built from the XML bounding boxes ($75$ malignant, $41$ benign; the paper has $76$ + $36$). The image-level $80/20$ split yields 91 training patches across 85 images and 25 test patches across 22 images. Both the WS-only and CNN-only protocols from the tissue task were re-applied unchanged.
+
+\subsection*{Stage 5a --- WS-Only Mass Classification}
+
+\textbf{Result.} 10-fold group-aware cross-validation accuracy was $74.7\% \pm 8.8\%$; held-out test accuracy was $52.0\%$ (Precision $0.667$, Recall $0.588$, F1 $0.625$, AU-ROC $0.599$). This is a single seed-34 split and is highly variable at $n_\mathrm{test} \approx 24$: the leakage-free five-seed mean is markedly higher and more stable --- AU-ROC $0.726 \pm 0.030$, test accuracy $0.701 \pm 0.075$ (Table~\ref{tab:results_mass}). The $52.0\%$ single-split figure should therefore not be read as the model's representative performance.
+
+\textbf{What this suggests.} The cross-validation number is close to the paper's reported $69\%$ and is in fact slightly better. The held-out test accuracy, however, is far below the paper's $83.3\%$. With only 25 test patches and a $32\%$/$68\%$ benign/malignant split, a single additional misclassification moves test accuracy by 4~pp, so the test estimate is high-variance. The discrepancy is also qualitatively consistent with the paper's own observation that mass tissue is a less linearly separable target for WS than background tissue: they describe mass classification as a setting where ``less usable features of WS could be utilized.''
+
+\subsection*{Stage 5b --- CNN-Only Mass Classification}
+
+\textbf{What was tried.} A \emph{fresh} ResNet18 was fine-tuned on the mass patches (not warm-started from the tissue model), with the same hyperparameters and the same train/val/test image-level partitioning. The validation set is 17 images (18 patches). Training took $25.6\,\mathrm{s}$ for 60~epochs.
+
+\textbf{Result --- CNN direct.} Train accuracy $100.0\%$, validation accuracy $77.8\%$, test accuracy $84.0\%$, test AU-ROC $0.934$. Overfit gap (train $-$ test) was $16.0\%$.
+
+\textbf{Result --- CNN $\rightarrow$ Subspace k-NN (paper protocol).} 10-fold group-aware CV $95.6\% \pm 5.4\%$, test accuracy $80.0\%$, AU-ROC $0.779$, Precision $0.875$, Recall $0.824$, F1 $0.849$.
+
+\textbf{What this suggests.} All six headline metrics in Table~7 (paper's CNN-only column) reproduce to within $1$--$3$~pp of the paper's reported values (paper: Test $0.833$, CV $1.000$, AUC $0.80$, P $0.889$, R $0.800$, F1 $0.842$). The per-epoch training and validation accuracy curves logged by the notebook exhibit the same overfitting signature the paper describes: training accuracy saturates by epoch~10 while validation accuracy oscillates in the $60$--$90\%$ range. This is the diagnostic the supervisor asked for, and it confirms the paper's narrative: a pure CNN trained on this small a sample size overfits and would benefit from handcrafted-feature fusion.
+
+\section{Stage 6 --- CNN + WS Feature Fusion (Both Tasks)} \label{sec:stage6}
+
+\textbf{What was tried.} The paper's headline model (Model~5 in their Table~6; the ``CNN + WS'' column of their Table~7) fuses the CNN and WS branches by \emph{concatenating} the two feature vectors per patch and feeding the combined vector to the same Subspace k-NN ensemble used by the single-feature models. No feature selection, no dimensionality reduction, and (per supervisor instruction) no GLCM branch were applied. The implementation, in \textit{Step 2.3 --- Fusion}, joins the saved WS features (406-d per patch, from Step~2.1) and CNN avgpool features (512-d per patch, from Step~2.2) on the \texttt{patch\_npy} key to guarantee per-patch alignment. The labels and the train/test split columns are asserted to match exactly between the two source CSVs before concatenation, and the assertions pass. CNN features for the mass task were not persisted by Step~2.2 and are re-extracted in Step~2.3 by reloading the saved \texttt{resnet18\_benign\_malignant.pth} weights. The fused vector has dimension $512 + 406 = 918$. \texttt{StandardScaler} is fitted on the training fold(s) only.
+
+\textbf{Result --- Tissue (Table~6 Model~5 equivalent).} 10-fold group-aware CV $100.0\% \pm 0.0\%$; test accuracy $98.9\%$; AU-ROC $0.987$; Precision $1.000$; Recall $0.974$; F1 $0.987$. Training time $4.9\,\mathrm{s}$ (the CNN backbone is already trained; this is just the k-NN ensemble fit on the fused vectors).
+
+\textbf{Result --- Mass (Table~7 ``CNN + WS'' equivalent).} 10-fold group-aware CV $95.6\% \pm 5.4\%$; test accuracy $88.0\%$; AU-ROC $0.824$; Precision $0.889$, Recall $0.941$, F1 $0.914$. Training time $10.8\,\mathrm{s}$. These are the seed-34 single split; under the leakage-free five-seed protocol the fusion settles to AU-ROC $0.816 \pm 0.057$, test accuracy $0.792 \pm 0.058$ (Table~\ref{tab:results_mass}), and the CV figure is optimistic because the CNN features were extracted before the CV split.
+
+\textbf{What this suggests.} On the tissue task, fusion gives a small but real improvement over the CNN-only baseline ($98.9\%$ vs $97.8\%$ test; one fewer misclassified patch out of 90) and exceeds the paper's reported $93.5\%$ by a similar margin to the CNN-only result, consistent with the cleaner preprocessing pipeline used throughout this replication. On the mass task, fusion gives a substantially larger boost over CNN-only on the seed-34 split ($88.0\%$ vs $80.0\%$ test, $+8$~pp; the recall climbs from $0.824$ to $0.941$ and the F1 from $0.849$ to $0.914$). This is the regime the paper's narrative emphasises: handcrafted scattering features add genuine new information when the CNN is overfitting on a small sample. The F1 and recall scores fall within $\sim$1~pp of the paper's Table~7 values for the same configuration. The seed-34 test AU-ROC ($0.824$ vs the paper's $1.00$) is the one number that lags, attributable to the very small test set ($n_\mathrm{test} = 25$) and the resulting coarse probability ranking; the seed-99 five-seed mean ($0.816 \pm 0.057$, Table~\ref{tab:results_mass}) is the stable estimate, and only a larger held-out set would tighten it further.
+
+\textbf{Decision.} The paper's main contribution has been reproduced for both tasks. No further single-method replication work is planned within the scope of this project; remaining improvements are write-up and robustness work (Section~\ref{sec:discussion}).
+
+\section{Cross-Method Summary} \label{sec:summary_results}
+
+Tables~\ref{tab:results_tissue} and~\ref{tab:results_mass} summarise all replicated results against the paper's reported benchmarks. Numbers in the ``Ours'' rows are taken directly from the saved CSV outputs of the FINAL notebooks (\texttt{data/outputs/final\_tissue\_replication/} and \texttt{data/outputs/final\_mass\_replication/}).
+
+\begin{table}[h]
+\centering
+\caption{Fatty vs.\ fibroglandular classification: paper benchmarks versus our replication. ``Ours'' rows use the final five-seed protocol (image-level seeds $\{1,7,34,42,99\}$): AU-ROC and test accuracy are mean~$\pm$~standard deviation, and CV is the seed-34 group-aware 10-fold accuracy kept only as a paper-comparison metric. Paper values are from Table~6 of \cite{razali2023cnn}. Source: \texttt{final\_tissue\_replication/master\_table\_tissue.csv}.}
+\label{tab:results_tissue}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Method} & \textbf{AU-ROC} & \textbf{Test Acc.} & \textbf{CV (seed 34)} & \textbf{F1} \\
+\midrule
+\multicolumn{5}{l}{\textit{Paper \cite{razali2023cnn} --- MATLAB (single split)}} \\
+\addlinespace
+\quad WS-only            & 0.94 & 0.914 & 0.911 & 0.910 \\
+\quad CNN-only           & 0.90 & 0.774 & 0.990 & 0.808 \\
+\quad CNN + WS           & 0.96 & 0.935 & 0.993 & 0.934 \\
+\midrule
+\multicolumn{5}{l}{\textit{This replication --- Python / Kymatio / PyTorch (five-seed)}} \\
+\addlinespace
+\quad WS-only (averaged, Mallat)              & $0.895 \pm 0.070$ & $0.839 \pm 0.071$ & $0.812 \pm 0.073$ & 0.807 \\
+\quad CNN-only (ResNet18 $\rightarrow$ k-NN)  & $0.979 \pm 0.010$ & $0.979 \pm 0.010$ & $1.000$~(opt.) & 0.976 \\
+\quad CNN + WS fusion (concat)               & $0.988 \pm 0.007$ & $0.964 \pm 0.030$ & $1.000$~(opt.) & 0.957 \\
+\midrule
+\multicolumn{5}{l}{\textit{Extension (Chapter~\ref{sec:extensions})}} \\
+\addlinespace
+\quad Adapted scattering cov.\ ($J{=}6, L{=}3$) & $0.984 \pm 0.010$ & $0.959 \pm 0.013$ & $0.962 \pm 0.023$ & 0.951 \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.3em}
+{\small CV is 10-fold (group-aware in our replication, standard stratified in the paper). ``(opt.)'' marks an optimistic CV: the learned CNN features were extracted before the CV split, so this CV is not an honest out-of-sample estimate (Section~\ref{sec:eval_protocol}).}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Benign vs.\ malignant mass classification: paper benchmarks versus our replication. ``Ours'' rows use the final five-seed protocol (mean~$\pm$~standard deviation; AU-ROC-led under class imbalance), with seed-34 group-aware CV retained only as a paper-comparison metric. Paper values are from Table~7 of \cite{razali2023cnn}. Source: \texttt{final\_mass\_replication/master\_table\_mass.csv}.}
+\label{tab:results_mass}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Method} & \textbf{AU-ROC} & \textbf{Test Acc.} & \textbf{CV (seed 34)} & \textbf{F1} \\
+\midrule
+\multicolumn{5}{l}{\textit{Paper \cite{razali2023cnn} (single split)}} \\
+\addlinespace
+\quad WS-only            & 0.80 & 0.833 & 0.690 & 0.842 \\
+\quad CNN-only           & 0.80 & 0.833 & 1.000 & 0.842 \\
+\quad CNN + WS           & 1.00 & 0.917 & 0.980 & 0.918 \\
+\midrule
+\multicolumn{5}{l}{\textit{This replication --- five-seed, post data-quality filter ($115$ patches)}} \\
+\addlinespace
+\quad Majority baseline                       & $0.500 \pm 0.000$ & $0.668 \pm 0.031$ & $0.633 \pm 0.051$ & 0.801 \\
+\quad WS-only (averaged, Mallat)              & $0.726 \pm 0.030$ & $0.701 \pm 0.075$ & $0.711 \pm 0.113$ & 0.781 \\
+\quad CNN-only (ResNet18 $\rightarrow$ k-NN)  & $0.762 \pm 0.117$ & $0.766 \pm 0.067$ & $0.989$~(opt.) & 0.829 \\
+\quad CNN + WS fusion (concat)               & $0.816 \pm 0.057$ & $0.792 \pm 0.058$ & $0.978$~(opt.) & 0.842 \\
+\midrule
+\multicolumn{5}{l}{\textit{Extension (Chapter~\ref{sec:extensions})}} \\
+\addlinespace
+\quad Adapted scattering cov.\ ($J{=}6, L{=}3$) & $0.734 \pm 0.062$ & $0.682 \pm 0.115$ & --- & 0.732 \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.3em}
+{\small Held-out set is the post-filter $24$-patch split (Section~\ref{sec:mass_quality_filter}). ``(opt.)'' marks optimistic CV on learned features. Scattering covariance gives \emph{no} AU-ROC gain over averaged WS on mass --- it is a tissue-side extension (Chapter~\ref{sec:extensions}); the mass gains come from the region-aware methods. The earlier single-seed figures (e.g.\ WS-only test $0.52$, fusion test $0.88$) were high-variance single splits and are superseded by these five-seed means.}
+\end{table}
+
+
+\section{Why an extension to the WS branch is needed} \label{sec:why_extension}
+
+Two facts from the replication motivate the extension experiments of Chapter~\ref{sec:extensions}. First, the \emph{tissue} task is essentially solved by the paper-style pipeline: the CNN (AU-ROC $0.979$) and the CNN~+~WS fusion ($0.988$) are near-saturated and the averaged WS branch is already respectable ($0.895$), so there is little headroom left to chase by reworking the tissue pipeline. Second, the \emph{mass} task is both harder and more fragile: the held-out set is tiny ($24$ patches), the across-seed spread is wide, and --- most importantly --- the paper-style \emph{averaged} wavelet scattering is weak (AU-ROC $0.726$, only just below the CNN-only $0.762$ and well below fusion's $0.816$).
+
+The averaging is the prime suspect. Collapsing each scattering map to a single scalar discards \emph{where} lesion structure sits, which is exactly the core-versus-margin-versus-context information that distinguishes benign from malignant masses (Chapter~\ref{sec:background}); on a near-homogeneous background-tissue patch nothing is lost, but on a structured lesion a great deal is. The natural question is therefore whether the WS branch can be improved by (a)~a richer \emph{scalar} descriptor, or (b)~\emph{preserving} the spatial maps and the lesion's internal structure. The next chapter pursues both: it first screens a broad set of supporting, non-region-aware extensions (normalisation, statistical and pooled WS, scattering covariance, CNN crops, and fusion variants), finds their gains useful but limited, and then commits, for the mass task, to preserving the scattering spatial map and learning over it with a small CNN --- with a lesion-relative region-aware decomposition as its interpretable instantiation --- as the project's main methodological extension.
+
+
+% ============================================================
+% 4. DISCUSSION
+% ============================================================

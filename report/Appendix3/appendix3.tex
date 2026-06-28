@@ -1,0 +1,22 @@
+%!TEX root = ../thesis.tex
+\chapter{Exploratory and Negative-Control Methods} \label{app:negative_controls}
+
+Several wavelet-scattering and CNN/fusion variants were explored during the project but were \emph{not} selected as final methods. They are preserved with full provenance in the appendix notebook \textit{FINAL Step~2.5 --- Extension Methods Appendix} and summarised in Table~\ref{tab:appendix_methods}. They document the breadth of the search and act as negative controls supporting the concise discussion in Section~\ref{sec:ws_alternatives}; none was adopted because it was unstable, superseded, computationally heavy, or did not beat a simpler baseline.
+
+\begin{table}[h]
+\centering
+\caption{Appendix-level extension methods preserved in \textit{FINAL Step~2.5} --- provenance and negative-control results, not final methods.}
+\label{tab:appendix_methods}
+\small
+\begin{tabular}{p{2.9cm}p{3.3cm}p{2.9cm}p{3.1cm}}
+\toprule
+\textbf{Method} & \textbf{Purpose} & \textbf{Outcome} & \textbf{Why appendix-level} \\
+\midrule
+Full-map flattening / flatten+PCA & test whether flattening the scattering map helps & no gain over averaged or structured WS & against the no-flattening guidance; superseded \\
+Tensor-distance WS classifiers & classify by inter-tensor distance instead of feature vectors & did not beat the spatial-mean baseline & heavier to compute, no benefit \\
+WS $J$-sweeps / granularity tests & find the scale/grid that best retains structure & pointed to lower-$J$ maps with a learned head & diagnostic; informed the main method \\
+Extra CNN crop / classifier variants & sweep crop size and frozen-feature heads & confirmed square crop + frozen ResNet + logreg as comparator & screening; clean comparator owned by Section~\ref{sec:region_aware} \\
+Extra fusion variants & alternative early / late fusion heads & head-sensitive; no robust whole-patch gain & screening; headline fusion owned by Chapter~\ref{sec:extensions} \\
+\bottomrule
+\end{tabular}
+\end{table}
