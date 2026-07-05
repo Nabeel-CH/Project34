@@ -979,11 +979,15 @@ wish to left align your text}
 \vspace*{0.5em}
 \fi
 % Reclaim the 2.5em inserted above the supervisor so the submission text and the
-% gap down to the bottom keep their original (supervisor-less) position.
-\vspace{\dimexpr.2\PHD@titlepagespacing-2.5em\relax}
+% gap down to the bottom keep their original (supervisor-less) position, then
+% raise the submission block by one line for title-page balance.
+\vspace{\dimexpr.2\PHD@titlepagespacing-2.5em-\baselineskip\relax}
 
 % Submission Text
 {\usebox{\PHD@submission}}
+
+% Word count (stated on the front cover per the course guidance)
+\@ifundefined{thesiswordcount}{}{\vspace*{1.5em}\vspace*{\baselineskip}{\small \thesiswordcount \par}}
 
 % College and degree date
 \vfill

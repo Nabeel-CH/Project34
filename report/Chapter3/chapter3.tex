@@ -21,7 +21,7 @@ For the tissue classification task, a binary density label is derived from the A
 
 This binary mapping yields \textbf{409 of the 410 DICOMs} as usable for the tissue task. One row drops out at ACR cleanup: \texttt{file\_id 53582540}, a BIRADS-1 normal right-MLO image whose \texttt{ACR} field in \texttt{INbreast.xls} is a whitespace-only string (a data-entry artefact in the original spreadsheet) and therefore cannot be placed on the binary density scale. The dropped image carries no mass annotation, no lesion ROI, and no OsiriX XML file, so the exclusion has no downstream consequence for the mass classification task or any other stage. This step and the identity of the dropped row are recorded in \textit{Step 0.2 --- Map to XLS}, \S 7.1.
 
-The resulting tissue-task class distribution is moderately imbalanced: \textbf{282 non-dense} (ACR~1: 136; ACR~2: 146) vs.\ \textbf{127 dense} (ACR~3: 99; ACR~4: 28), i.e.\ approximately a \textbf{69\,\%/31\,\%} split. The majority-class baseline against which any tissue classifier should be compared is therefore around \textbf{69\,\%}: a model that always predicts non-dense would achieve this. Read in that light, the WS-only baseline of ${\sim}84\%$ test accuracy in Section~\ref{sec:stage1} sits roughly \textbf{15~pp above} the majority baseline, and the adapted scattering covariance result of ${\sim}95.5\%$ test (Section~\ref{sec:scov_tissue}) sits roughly \textbf{26~pp above} it. Downstream classifiers do not apply class-weight balancing; metrics are reported on the natural distribution.
+The resulting tissue-task class distribution is moderately imbalanced: \textbf{282 non-dense} (ACR~1: 136; ACR~2: 146) vs.\ \textbf{127 dense} (ACR~3: 99; ACR~4: 28), i.e.\ approximately a \textbf{69\,\%/31\,\%} split. The majority-class baseline against which any tissue classifier should be compared is therefore around \textbf{69\,\%}: a model that always predicts non-dense would achieve this. Read in that light, the WS-only baseline of ${\sim}84\%$ test accuracy in Section~\ref{sec:stage1} sits roughly \textbf{15~pp above} the majority baseline, and the adapted scattering covariance result of ${\sim}95.9\%$ test (Section~\ref{sec:scov_tissue}) sits roughly \textbf{27~pp above} it. Downstream classifiers do not apply class-weight balancing; metrics are reported on the natural distribution.
 
 
 \section{Preprocessing} \label{sec:preprocessing}
@@ -40,11 +40,11 @@ Each DICOM image passes through a four-stage preprocessing pipeline, implemented
 
 \textbf{Storage format.} Preprocessed images and the extracted mass / background patches are saved as NumPy \texttt{.npy} arrays rather than the PNG files the reference paper uses. We checked that this choice does not materially affect downstream results: a controlled comparison on the 115-patch WS mass-classification task --- feeding the Subspace $k$-NN ensemble with WS features extracted from \texttt{.npy} patches vs.\ an 8-bit PNG round-trip of the same patches (float $[0,1] \rightarrow \mathrm{uint8} \rightarrow$ 8-bit grayscale PNG $\rightarrow$ reload $\rightarrow$ float $[0,1]$) --- produced \emph{identical} held-out test accuracy on all five train/test split seeds tested ($\{1, 7, 34, 42, 99\}$), with cross-validation accuracy and AU-ROC differences well inside the across-seed noise floor (e.g.\ ${\sim}0.2$~pp on CV-mean vs.\ a ${\sim}2$~pp across-seed standard deviation, with the two non-zero deltas pointing in opposite directions on different metrics). At the pixel level the 8-bit PNG round-trip introduced a per-pixel MAE of ${\sim}0.08\%$ --- a half-step of 8-bit quantisation, as expected --- which the Wavelet Scattering transform's spatial-averaging step then absorbs, leaving a feature-vector relative MAE of only ${\sim}0.02\%$. We therefore retain \texttt{.npy} as a practical implementation choice (no quantisation step, exact preservation of mask dtypes, and the native format expected by Kymatio, PyTorch and scikit-learn), not as an accuracy improvement. The full numerical evidence is in \texttt{data/outputs/png\_vs\_npy\_investigation/}.
 
-\textbf{Differences from the reference paper.} The paper's preprocessing includes a density-aware histogram adjustment technique (their reference [73], an earlier work by the same authors) rather than CLAHE. Their method adaptively adjusts contrast based on the clinical density category of the breast, which may provide better separation of tissue types. Our use of standard CLAHE, while effective as a general-purpose enhancement, does not incorporate density-specific information and likely constitutes one source of performance difference between our replication and the reported results. Additionally, the paper converts images to PNG format and uses seeded region growing for pectoral muscle segmentation, whereas we operate directly on DICOM arrays and use ground-truth polygon masks from an independent public source. Table~\ref{tab:preproc_comparison} summarises the key differences.
+\textbf{Differences from the reference paper.} Table~\ref{tab:preproc_comparison} summarises the key differences. The most consequential is contrast enhancement: the paper uses a density-aware histogram adjustment (their reference [73], by the same authors) that adapts to the clinical breast-density category, whereas our standard CLAHE is density-agnostic --- likely one source of the performance difference on the density task, since it forgoes exactly the density-specific contrast being classified. The remaining differences (PNG conversion; seeded region growing versus ground-truth polygon masks) are tabulated rather than expanded here.
 
 \begin{table}[h]
 \centering
-\caption{Preprocessing pipeline comparison between the reference paper and this replication.}
+\caption[Comparison of the preprocessing pipeline: paper versus replication]{Preprocessing pipeline comparison between the reference paper and this replication.}
 \label{tab:preproc_comparison}
 \begin{tabular}{p{3.2cm}p{5.5cm}p{5.5cm}}
 \toprule
@@ -86,7 +86,7 @@ This procedure yields 434 background patches in total: 251 fatty and 183 fibrogl
 
 \begin{table}[h]
 \centering
-\caption{Number of extracted patches. The paper uses $n = 112$ source images from INbreast; our pipeline processes all 343 images with XML annotations.}
+\caption[Number of extracted patches: paper versus this replication]{Number of extracted patches. The paper uses $n = 112$ source images from INbreast; our pipeline processes all 343 images with XML annotations.}
 \label{tab:patch_counts}
 \begin{tabular}{llcc}
 \toprule
@@ -136,7 +136,7 @@ Kymatio returns scattering coefficient \emph{maps} of shape $(C, H_s, W_s)$; fol
 
 \begin{table}[h]
 \centering
-\caption{Wavelet scattering configuration: reference paper (MATLAB) vs.\ this replication (Python / Kymatio).}
+\caption[Wavelet scattering configuration: paper versus this replication]{Wavelet scattering configuration: reference paper (MATLAB) vs.\ this replication (Python / Kymatio).}
 \label{tab:ws_config}
 \begin{tabular}{lcc}
 \toprule
@@ -173,7 +173,7 @@ Each learner independently projects the data onto a random 190-dimensional subsp
 
 \begin{table}[h]
 \centering
-\caption{Subspace k-NN ensemble classifier settings. The paper tested several values and selected the optimal ones shown; we adopt the same optimal values.}
+\caption[Subspace k-NN ensemble classifier settings]{Subspace k-NN ensemble classifier settings. The paper tested several values and selected the optimal ones shown; we adopt the same optimal values.}
 \label{tab:knn_settings}
 \begin{tabular}{lccc}
 \toprule
@@ -221,7 +221,7 @@ The hyperparameters follow Table~4 of the paper exactly:
 
 After fine-tuning, 512-dimensional feature vectors are extracted from the average-pooling layer of the trained network via a forward hook --- i.e.\ from the penultimate layer, before the final FC. These features are then standardised with \texttt{StandardScaler} and classified by the same Subspace k-NN ensemble described in Section~\ref{sec:classifier}, matching the paper's pipeline for Model~1.
 
-\textbf{Validation set for overfitting tracking.} In addition to the 80/20 train--test split, we carve a $\sim$20\% validation set from the training images (image-level) and track its loss and accuracy at each epoch. This is an additional diagnostic not described in the paper, included after the supervisor flagged a concern about CNN overfitting; the diagnostic results are presented in Section~\ref{sec:results} (Stage~4 and Stage~5b). The validation patches are excluded from gradient updates but re-included for the subsequent k-NN feature extraction so that the classifier sees the same training set as the paper.
+\textbf{Validation set for overfitting tracking.} In addition to the 80/20 train--test split, we carve a $\sim$20\% validation set from the training images (image-level) and track its loss and accuracy at each epoch. This is an additional diagnostic not described in the paper, included to track the CNN overfitting expected on a sample this small (a concern the paper itself emphasises); the diagnostic results are presented in Section~\ref{sec:results} (Stage~4 and Stage~5b). The validation patches are excluded from gradient updates but re-included for the subsequent k-NN feature extraction so that the classifier sees the same training set as the paper.
 
 
 \section{Region-aware WS-map CNN head (extension)} \label{sec:region_aware_method}
@@ -239,13 +239,13 @@ This extension, developed for the mass task, keeps the spatial scattering maps a
 
 \section{Final evaluation protocol and reporting} \label{sec:eval_protocol}
 
-The development narrative in Section~\ref{sec:results} reports each stage on a single fixed image-level split (seed~34) with group-aware 10-fold cross-validation, reflecting how the experiments were originally run. For the \emph{final} comparison of the headline methods this is not enough on its own: the mass held-out set contains only ${\sim}25$ patches from ${\sim}22$ images, so a single additional misclassification shifts test accuracy by ${\sim}4$~pp, and a single split can swing by $10$~pp or more between seeds. The final evaluation protocol therefore follows four principles.
+The development narrative in Section~\ref{sec:results} reports each stage on a single fixed image-level split (seed~34) with group-aware 10-fold cross-validation, reflecting how the experiments were originally run. For the \emph{final} comparison of the headline methods this is not enough on its own: the mass held-out set contains only ${\sim}25$ patches from ${\sim}22$ images (${\sim}24$ once the data-quality filter of Section~\ref{sec:mass_quality_filter} is applied), so a single additional misclassification shifts test accuracy by ${\sim}4$~pp, and a single split can swing by $10$~pp or more between seeds. The final evaluation protocol therefore follows four principles.
 
 \begin{enumerate}
     \item \textbf{Repeated, image-level splits.} Each headline method is evaluated over five repeated stratified train/test splits (seeds $\{1, 7, 34, 42, 99\}$), each grouped by \texttt{file\_id} so that no patches or ROIs from the same mammogram fall in both the training and test partitions. Reporting the spread across seeds, rather than one fixed split, exposes the split sensitivity that a single number conceals.
     \item \textbf{Leakage-free feature extraction.} Where a method uses a trained feature extractor (the CNN branch), the network is \emph{retrained inside each split} on that split's training images only, so the test features come from a model that never saw them.
     \item \textbf{Training-only scaling.} The \texttt{StandardScaler} is fitted on the training fold only and then applied to the test fold, so that no test statistics influence training.
-    \item \textbf{AUROC-led reporting under class imbalance.} The mass task is imbalanced ($74$ malignant vs.\ $41$ benign, a majority-class baseline of ${\sim}68\%$), so raw accuracy is misleading --- a trivial ``always malignant'' rule already scores ${\sim}68\%$. We therefore lead with the area under the ROC curve (AU-ROC), which is threshold-independent and unaffected by class prevalence, and report accuracy, precision, recall, and F1 alongside it. All metrics are quoted as mean~$\pm$~standard deviation across the five seeds.
+    \item \textbf{AUROC-led reporting under class imbalance.} The mass task is imbalanced ($74$ malignant vs.\ $41$ benign), so raw accuracy is misleading: a trivial ``always malignant'' rule already scores the ${\sim}68\%$ majority baseline. We therefore lead with the area under the ROC curve (AU-ROC), which is threshold-independent and unaffected by class prevalence, and report accuracy, precision, recall, and F1 alongside it. All metrics are quoted as mean~$\pm$~standard deviation across the five seeds.
 \end{enumerate}
 
 Five seeds is a deliberate trade-off: enough to reveal the across-seed variability while keeping every headline method on a common, reproducible set of splits. Because all seeds resample the same ${\sim}115$ mass patches, the reported standard deviation should be read as an indicator of split sensitivity on a small dataset, not as a tight confidence interval. Cross-validation is not used as a headline metric: the repeated held-out splits already give an out-of-sample estimate, and cross-validation computed on \emph{learned} CNN features is optimistic because the feature extractor has already seen the inner-validation images. The consolidated comparison under this protocol is produced by the canonical \textit{FINAL Step~2.1--2.5} notebooks.
