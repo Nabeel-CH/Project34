@@ -3,44 +3,34 @@
 
 \chapter{Data, Preprocessing, Methods, and Experimental Protocol} \label{sec:methodology}
 
-This section describes the end-to-end pipeline: from loading and preprocessing the raw mammographic data, through patch extraction and tissue labelling, to wavelet scattering feature computation and classification. The pipeline is implemented across several Jupyter notebooks, each corresponding to one stage, and the full codebase is available in the accompanying project repository.
+This chapter describes the end-to-end pipeline --- from loading and preprocessing the raw mammograms, through patch extraction and labelling, to feature computation, classification, and the evaluation protocol. Each stage corresponds to a Jupyter notebook in the accompanying repository.
 
 \section{Dataset: INbreast} \label{sec:dataset}
 
-We use the INbreast dataset \cite{moreira2012inbreast}, a publicly available full-field digital mammography (FFDM) database comprising 410 DICOM images acquired at a breast centre in Porto, Portugal. Each case includes standard cranio-caudal (CC) and medio-lateral oblique (MLO) views.
+We use INbreast \cite{moreira2012inbreast}, a public full-field digital mammography database of 410 DICOM images (cranio-caudal and medio-lateral-oblique views) from a breast centre in Porto. Three metadata sources are linked by a numeric \texttt{file\_id}: the \texttt{INbreast.xls} sheet (BI-RADS assessment \cite{sickles2013acr}, ACR density 1--4, laterality, view); OsiriX XML annotations (343 of 410 images) giving region-of-interest polygons for lesions; and LabelMe-format pectoral-muscle masks \cite{aliniya2023pectoral} for 202 MLO views.
 
-Three complementary metadata sources are linked by a common numeric \texttt{file\_id}:
-
-\begin{itemize}
-    \item \textbf{INbreast.xls} --- per-image metadata including BI-RADS assessment category \cite{sickles2013acr}, ACR breast density score (1--4), laterality, and acquisition view.
-    \item \textbf{OsiriX XML annotations} --- plist-format files (343 of 410 images) containing region-of-interest (ROI) polygons for lesions such as masses.
-    \item \textbf{Pectoral muscle masks} --- LabelMe-format JSON polygon annotations \cite{aliniya2023pectoral} covering 202 MLO-view images, providing ground-truth segmentations for the pectoral muscle.
-\end{itemize}
-
-For the tissue classification task, a binary density label is derived from the ACR score: ACR 1--2 maps to non-dense (class 0), and ACR 3--4 maps to dense (class 1). For mass classification, the BI-RADS assessment determines the label: BI-RADS 2--3 is labelled benign, and BI-RADS 4--6 is labelled malignant; BI-RADS 1 (normal) is excluded.
-
-This binary mapping yields \textbf{409 of the 410 DICOMs} as usable for the tissue task. One row drops out at ACR cleanup: \texttt{file\_id 53582540}, a BIRADS-1 normal right-MLO image whose \texttt{ACR} field in \texttt{INbreast.xls} is a whitespace-only string (a data-entry artefact in the original spreadsheet) and therefore cannot be placed on the binary density scale. The dropped image carries no mass annotation, no lesion ROI, and no OsiriX XML file, so the exclusion has no downstream consequence for the mass classification task or any other stage. This step and the identity of the dropped row are recorded in \textit{Step 0.2 --- Map to XLS}, \S 7.1.
-
-The resulting tissue-task class distribution is moderately imbalanced: \textbf{282 non-dense} (ACR~1: 136; ACR~2: 146) vs.\ \textbf{127 dense} (ACR~3: 99; ACR~4: 28), i.e.\ approximately a \textbf{69\,\%/31\,\%} split. The majority-class baseline against which any tissue classifier should be compared is therefore around \textbf{69\,\%}: a model that always predicts non-dense would achieve this. Read in that light, the WS-only baseline of ${\sim}84\%$ test accuracy in Section~\ref{sec:stage1} sits roughly \textbf{15~pp above} the majority baseline, and the adapted scattering covariance result of ${\sim}95.9\%$ test (Section~\ref{sec:scov_tissue}) sits roughly \textbf{27~pp above} it. Downstream classifiers do not apply class-weight balancing; metrics are reported on the natural distribution.
-
+Labels come directly from this metadata. For the \textbf{tissue} task, ACR 1--2 maps to non-dense (class 0) and ACR 3--4 to dense (class 1); for the \textbf{mass} task, BI-RADS 2--3 is benign and 4--6 malignant, with BI-RADS 1 excluded. This yields 409 usable images for the tissue task --- one image (\texttt{file\_id 53582540}) drops out because its ACR field is blank in the spreadsheet, and as it carries no lesion annotation the exclusion is inconsequential. The tissue classes are moderately imbalanced --- 282 non-dense (ACR 1: 136; ACR 2: 146) versus 127 dense (ACR 3: 99; ACR 4: 28), a $69\%/31\%$ split --- so the majority-class baseline is $\sim$69\%, against which the $\sim$84\% WS-only and $\sim$95.9\% scattering-covariance accuracies (Sections~\ref{sec:stage1},~\ref{sec:scov_tissue}) sit 15 and 27~pp above. Metrics are reported on the natural distribution, without class-weight balancing.
 
 \section{Preprocessing} \label{sec:preprocessing}
 
-Each DICOM image passes through a four-stage preprocessing pipeline, implemented in \textit{Step 1.1 --- Preprocessing}:
-
+Each image passes through four stages (\textit{Step 1.1}), shown end-to-end for one example in Figure~\ref{fig:preproc_walkthrough}:
 \begin{enumerate}
-    \item \textbf{Normalisation.} The pixel array is read using pydicom \cite{pydicom2024} and rescaled to the interval $[0, 1]$. The reference paper converts each DICOM to PNG (an implicit min-max windowing into 8-bit) and then normalises to $[0, 1]$; we approximate this by clipping each image at its 1st and 99th percentiles and then rescaling. A direct min-max stretch was tested as an ablation and was found to compress the breast-tissue dynamic range into a narrow band near zero, because a small number of pixels per image (calibration markers, edge artefacts, sensor hot spots) sit far above the bulk distribution of breast tissue and dominate the rescaling. The percentile clip is robust to those extreme values, keeps the meaningful tissue values well-spread across $[0, 1]$, and improved 10-fold CV accuracy on the fatty-vs-fibroglandular task from ${\sim}80\%$ to ${\sim}83\%$ on this dataset. This is a small implementation adaptation, not a methodological change. A header audit of all 410 INbreast DICOMs (Step 0.1) further confirmed that every file uses \texttt{MONOCHROME2} photometric interpretation and that none carry VOI LUT or \texttt{WindowCenter}/\texttt{WindowWidth} metadata. Earlier versions of the loader applied a VOI LUT and inverted \texttt{MONOCHROME1} images defensively; both branches were no-ops on this dataset and have now been removed.
-
-    \item \textbf{Pectoral muscle removal (MLO/ML views only).} For oblique-view images with a matching ground-truth JSON mask, the pectoral muscle region is zeroed out. This prevents the pectoral muscle from being mistaken for dense breast tissue during subsequent analysis. Two independent pectoral-mask sources exist for INbreast (the LabelMe JSON files used here, and an Apple-plist XML set from the original INESC Porto release); the choice has only a small downstream effect, which is audited in Section~\ref{sec:annot_audit}. Coverage of the LabelMe set is \textbf{202 of the $\sim$206 MLO/ML views}: 4 MLO/ML DICOMs have no pectoral mask in this source and silently bypass the pectoral step (any small pectoral region they contain is then handled by the Otsu breast-mask step below), and 1 CC view (\texttt{file\_id 50994273}) carries an anomalous small polygon that the loader's MLO/ML view-gating filters out.
-
-    \item \textbf{Breast mask segmentation.} The breast region is isolated using Otsu thresholding \cite{otsu1979threshold} on the uint8-converted image, followed by morphological closing and opening with an 11-pixel elliptical kernel, extraction of the largest connected component, and hole filling. This produces a binary mask separating the breast from the background.
-
-    \item \textbf{Contrast enhancement.} Contrast-Limited Adaptive Histogram Equalization (CLAHE) \cite{pizer1987adaptive} is applied within the breast mask using a clip limit of 2.0 and a tile grid size of $8 \times 8$, via OpenCV \cite{bradski2000opencv}. This locally enhances tissue contrast while preventing noise amplification.
+    \item \textbf{Normalisation.} The pixel array (read with pydicom \cite{pydicom2024}) is clipped at its 1st and 99th percentiles and rescaled to $[0,1]$. This approximates the paper's DICOM$\rightarrow$PNG min-max windowing while being robust to the few extreme pixels per image (calibration markers, sensor hot spots) that a plain min-max stretch lets dominate the rescaling --- percentile clipping raised 10-fold CV accuracy on the tissue task from $\sim$80\% to $\sim$83\%. All 410 files are \texttt{MONOCHROME2} with no VOI LUT or window metadata, so no windowing or inversion is applied.
+    \item \textbf{Pectoral-muscle removal (MLO/ML views).} Where a ground-truth JSON mask exists, the pectoral region is zeroed so it is not mistaken for dense tissue; the LabelMe set covers 202 of the $\sim$206 oblique views, and the four uncovered views are handled by the breast-mask step below. The pectoral-mask source has only a small effect, audited in Section~\ref{sec:annot_audit}.
+    \item \textbf{Breast-mask segmentation.} Otsu thresholding \cite{otsu1979threshold} on the uint8 image, followed by morphological closing/opening (11-pixel elliptical kernel), largest-connected-component extraction and hole filling, isolates the breast from the background.
+    \item \textbf{Contrast enhancement.} CLAHE \cite{pizer1987adaptive} (clip limit 2.0, $8 \times 8$ tiles, via OpenCV \cite{bradski2000opencv}) is applied within the breast mask.
 \end{enumerate}
 
-\textbf{Storage format.} Preprocessed images and the extracted mass / background patches are saved as NumPy \texttt{.npy} arrays rather than the PNG files the reference paper uses. We checked that this choice does not materially affect downstream results: a controlled comparison on the 115-patch WS mass-classification task --- feeding the Subspace $k$-NN ensemble with WS features extracted from \texttt{.npy} patches vs.\ an 8-bit PNG round-trip of the same patches (float $[0,1] \rightarrow \mathrm{uint8} \rightarrow$ 8-bit grayscale PNG $\rightarrow$ reload $\rightarrow$ float $[0,1]$) --- produced \emph{identical} held-out test accuracy on all five train/test split seeds tested ($\{1, 7, 34, 42, 99\}$), with cross-validation accuracy and AU-ROC differences well inside the across-seed noise floor (e.g.\ ${\sim}0.2$~pp on CV-mean vs.\ a ${\sim}2$~pp across-seed standard deviation, with the two non-zero deltas pointing in opposite directions on different metrics). At the pixel level the 8-bit PNG round-trip introduced a per-pixel MAE of ${\sim}0.08\%$ --- a half-step of 8-bit quantisation, as expected --- which the Wavelet Scattering transform's spatial-averaging step then absorbs, leaving a feature-vector relative MAE of only ${\sim}0.02\%$. We therefore retain \texttt{.npy} as a practical implementation choice (no quantisation step, exact preservation of mask dtypes, and the native format expected by Kymatio, PyTorch and scikit-learn), not as an accuracy improvement. The full numerical evidence is in \texttt{data/outputs/png\_vs\_npy\_investigation/}.
+\begin{figure}[h]
+\centering
+\includegraphics[width=\textwidth]{../data/outputs/report_figures/preprocessing_pipeline.png}
+\caption[The preprocessing pipeline on an example mammogram]{The preprocessing pipeline applied to one example MLO mammogram. The raw DICOM (0) is percentile-normalised (1); the ground-truth pectoral-muscle mask (2, yellow) is zeroed out (3); Otsu thresholding removes the non-breast background (4) via the breast mask (5); and CLAHE enhances local contrast within the breast (6). All patches are later cropped from panel~6.}
+\label{fig:preproc_walkthrough}
+\end{figure}
 
-\textbf{Differences from the reference paper.} Table~\ref{tab:preproc_comparison} summarises the key differences. The most consequential is contrast enhancement: the paper uses a density-aware histogram adjustment (their reference [73], by the same authors) that adapts to the clinical breast-density category, whereas our standard CLAHE is density-agnostic --- likely one source of the performance difference on the density task, since it forgoes exactly the density-specific contrast being classified. The remaining differences (PNG conversion; seeded region growing versus ground-truth polygon masks) are tabulated rather than expanded here.
+Preprocessed images and patches are stored as NumPy \texttt{.npy} arrays rather than PNG; an 8-bit-PNG round-trip changed no held-out result (feature-vector MAE $\sim$0.02\%), so this is a practical choice, not an accuracy one.
+
+\textbf{Differences from the reference paper.} Table~\ref{tab:preproc_comparison} summarises them. The most consequential is contrast enhancement: the paper uses a density-aware histogram adjustment (their reference [73]) that adapts to the ACR category, whereas our density-agnostic CLAHE forgoes exactly the density-specific contrast being classified --- a likely source of the WS-tissue gap. The remaining differences (PNG conversion; seeded region growing versus ground-truth polygon masks) are tabulated.
 
 \begin{table}[h]
 \centering
@@ -68,21 +58,23 @@ Patch tissue labelling & Otsu threshold on remaining breast region & Otsu thresh
 
 \section{Patch Extraction and Tissue Labelling} \label{sec:patch_extraction}
 
-Background tissue patches for the fatty versus fibroglandular classification task are extracted in \textit{Step 1.3 --- Background Patch Sampling}. The procedure operates on the 343 images that have XML annotations:
-
+Background patches for the tissue task are sampled from the 343 annotated images (\textit{Step 1.3}; Figure~\ref{fig:patch_sampling}):
 \begin{enumerate}
-    \item \textbf{Mass exclusion.} All ROIs labelled ``Mass'' in the XML annotations are parsed into polygon masks and dilated by 24 pixels to create an exclusion zone, ensuring that sampled background patches do not overlap with lesion tissue.
-
-    \item \textbf{Tissue segmentation.} Within the remaining allowed region (breast mask minus pectoral muscle minus dilated mass), an Otsu threshold splits tissue into a darker fatty region and a brighter fibroglandular region. A small gap of 0.03 around the threshold is enforced to reduce ambiguous patches at the boundary.
-
-    \item \textbf{ACR-guided sampling.} Unlike the paper, which does not describe density-aware patch filtering, we use the ACR breast density score to restrict which tissue classes each image may contribute. Images with ACR 1 (almost entirely fatty) contribute only fatty patches; ACR 4 (extremely dense) contributes only fibroglandular patches; and ACR 2--3 contribute both. This prevents mislabelling that can occur when Otsu thresholding forces a binary split on a breast that is clinically almost entirely one tissue type.
-
-    \item \textbf{Random patch sampling.} Up to 3 patches per allowed class per image are sampled at random positions and sizes (proportional to the breast bounding box, ranging from 14\% to 30\% of the shorter dimension, capped between 160 and 512 pixels). Each candidate patch must satisfy: full containment within the allowed mask, at least 65\% of pixels belonging to the target tissue class, and a minimum pixel standard deviation of 0.035 to reject flat or near-empty patches. Overlapping patches within the same image are forbidden. All random choices (patch position and size) are drawn from a single seeded generator (\texttt{np.random.default\_rng(34)}), so the sampled patch set is fully deterministic and identical on every run.
-
-    \item \textbf{Resizing.} Accepted patches are resized to $224 \times 224$ pixels using area-based interpolation and saved as float32 NumPy arrays.
+    \item \textbf{Mass exclusion.} All \texttt{Mass} ROIs are rasterised and dilated by 24 pixels to keep background patches clear of lesions.
+    \item \textbf{Tissue segmentation.} Within the allowed region (breast mask minus pectoral muscle minus dilated mass), an Otsu threshold splits fatty from fibroglandular tissue, with a 0.03 gap around the threshold to reduce boundary ambiguity.
+    \item \textbf{ACR-guided sampling.} Unlike the paper, the ACR score restricts which classes an image may contribute (ACR 1 $\rightarrow$ fatty only, ACR 4 $\rightarrow$ fibroglandular only, ACR 2--3 $\rightarrow$ both), preventing the mislabelling that a forced Otsu split causes on near-single-tissue breasts.
+    \item \textbf{Random sampling.} Up to three patches per allowed class per image are drawn at random positions and sizes (14--30\% of the shorter breast dimension, capped at 160--512 px), each requiring full containment, $\geq$65\% target-tissue purity, and pixel standard deviation $\geq$0.035; overlaps are forbidden. All draws use a single seeded generator (\texttt{np.random.default\_rng(34)}), so the set is deterministic.
+    \item \textbf{Resizing.} Accepted patches are resized to $224 \times 224$ (area interpolation) and saved as float32.
 \end{enumerate}
 
-This procedure yields 434 background patches in total: 251 fatty and 183 fibroglandular. The reference paper reports 397 patches (210 fatty, 187 fibroglandular); the difference arises from our ACR-guided sampling strategy and the absence of a hard-coded stopping criterion. Table~\ref{tab:patch_counts} compares the patch counts side-by-side.
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.6\textwidth]{../data/outputs/report_figures/patch_sampling_example.png}
+\caption[Background-patch sampling with mass exclusion and ACR-guided labelling]{Background-tissue patch sampling on one breast. Lesion ROIs are dilated into an excluded margin (orange dashed); within the remaining region, an Otsu split with the ACR-guided rule assigns patches as fatty (cyan) or fibroglandular (lime), drawn at varied positions and sizes with no overlap.}
+\label{fig:patch_sampling}
+\end{figure}
+
+This yields 434 background patches (251 fatty, 183 fibroglandular) versus the paper's 397; the difference reflects our ACR-guided sampling and the absence of a hard stopping criterion. Table~\ref{tab:patch_counts} compares the counts.
 
 \begin{table}[h]
 \centering
@@ -109,30 +101,14 @@ This procedure yields 434 background patches in total: 251 fatty and 183 fibrogl
 
 \section{Wavelet Scattering Transform} \label{sec:ws}
 
-The wavelet scattering transform provides a mathematically principled, non-learned feature representation that is locally invariant to translations and stable to small deformations \cite{mallat2012invariant, bruna2013invariant}. For an input signal $x$, the zeroth-order scattering coefficient is the local average $S_0 x = x \star \phi_J$, where $\phi_J$ is a low-pass filter at scale $2^J$. The first-order coefficients are obtained by convolving with a bank of oriented wavelets $\psi_{\lambda_1}$ (parametrised by scale and orientation), applying the modulus non-linearity, and averaging:
+The wavelet scattering transform gives a non-learned representation that is locally translation-invariant and stable to small deformations \cite{mallat2012invariant, bruna2013invariant}. For an input $x$, the zeroth-order coefficient is the local average $S_0 x = x \star \phi_J$ (low-pass filter $\phi_J$ at scale $2^J$); the first and second orders are
 \[
-S_1 x = |x \star \psi_{\lambda_1}| \star \phi_J.
+S_1 x = |x \star \psi_{\lambda_1}| \star \phi_J, \qquad
+S_2 x = ||x \star \psi_{\lambda_1}| \star \psi_{\lambda_2}| \star \phi_J,
 \]
-The second-order coefficients capture higher-frequency information lost by the first-order modulus, computed as:
-\[
-S_2 x = ||x \star \psi_{\lambda_1}| \star \psi_{\lambda_2}| \star \phi_J.
-\]
-Concatenating $S_0$, $S_1$, and $S_2$ produces the scattering feature vector.
+with $\psi_{\lambda}$ oriented wavelets; concatenating the orders gives the feature vector. We compute this with Kymatio \cite{andreux2020kymatio} at $J=6$ (invariance scale $2^J=64$~px), $L=5$ Morlet orientations \cite{morlet1982wave}, maximum order 2, on $224 \times 224$ patches, and spatially average each coefficient map to one scalar per path --- a 406-dimensional vector. Table~\ref{tab:ws_config} sets this against the paper's configuration; the count differs (406 versus 391) only because Kymatio uses all six scales with $L=5$ where MATLAB reserves one scale for the low-pass filter and uses $L=6$ (both follow $1 + JL + \binom{J}{2} L^2$ for the respective $J,L$) --- a library convention, not a modelling choice.
 
-\textbf{Implementation.} We use the Kymatio library \cite{andreux2020kymatio} with the following configuration, chosen to align with the reference paper:
-
-\begin{itemize}
-    \item Maximum scale: $J = 6$, corresponding to an invariance scale of $2^J = 64$ pixels.
-    \item Number of orientations: $L = 5$ (Morlet wavelets \cite{morlet1982wave}).
-    \item Maximum scattering order: 2.
-    \item Input shape: $224 \times 224$.
-\end{itemize}
-
-Kymatio returns scattering coefficient \emph{maps} of shape $(C, H_s, W_s)$; following the paper's approach, we spatially average each coefficient map to obtain one scalar per scattering path, yielding a compact 406-dimensional feature vector per patch.
-
-\textbf{Justification of the order and invariance-scale choices.} Two of these settings are directly supported by the foundational scattering analysis of Bruna and Mallat \cite{bruna2013invariant}. First, the choice of maximum order 2 is not arbitrary: they show that scattering energy decays exponentially with path length, with over 99\% of the energy carried by paths of length $m \le 3$, and that second-order coefficients recover precisely the higher-moment texture information that the first-order (SIFT-like) coefficients discard --- enough, for example, to discriminate textures with identical Fourier power spectra. Orders beyond 2 add negligible energy at substantial computational cost, so order 2 is the standard and well-motivated choice. Second, the large invariance scale ($2^J = 64$ on $224 \times 224$ patches) is appropriate because the fatty-versus-fibroglandular task is essentially a \emph{texture} discrimination problem: Bruna and Mallat show that for stationary-texture classification the optimal invariance scale approaches the image (here, patch) width, since this minimises the variance of the windowed-scattering estimator. Treating each background patch as a texture sample therefore favours a large $J$, and the near-complete spatial pooling that results (Kymatio returns a $3 \times 3$ spatial grid per path at this setting) is consistent with that view rather than a loss of useful information.
-
-\textbf{Feature count discrepancy.} The paper reports 391 features using MATLAB's \texttt{waveletScattering} toolbox, which uses 6 orientations. The count follows the formula $1 + JL + \binom{J}{2} L^2 = 1 + 6 \times 6 + 15 \times 36 = 577$; however, the MATLAB toolbox applies $L=6$ orientations and $J_{\max}=5$ wavelet scales (since one scale is reserved for the low-pass filter), giving $1 + 5 \times 6 + \binom{5}{2} \times 6^2 = 391$. In Kymatio with $L = 5$ orientations and $J = 6$ scales (all 6 used for wavelets), the count is $1 + 6 \times 5 + \binom{6}{2} \times 5^2 = 406$. This minor difference is an unavoidable consequence of different library conventions. Table~\ref{tab:ws_config} compares the two configurations.
+\textbf{Order and invariance scale.} Both follow Bruna and Mallat \cite{bruna2013invariant}. Scattering energy decays exponentially with path length (over 99\% within $m\le3$), and second-order coefficients recover the higher-moment texture that first-order coefficients discard --- enough to separate textures with identical power spectra --- so order 2 is standard and higher orders add negligible energy. The large invariance scale suits the tissue task, which is stationary-texture discrimination: Bruna and Mallat show the optimal invariance scale then approaches the patch width (minimising estimator variance), so a large $J$, and the near-complete pooling it produces, is appropriate rather than a loss of information.
 
 \begin{table}[h]
 \centering
@@ -160,98 +136,34 @@ Feature standardisation   & None (raw coefficients)           & \texttt{Standard
 
 \section{Classifier: Subspace k-NN Ensemble} \label{sec:classifier}
 
-Following the paper's specification, we use a \textit{Subspace k-Nearest Neighbours Ensemble} \cite{ho1998random, cover1967nearest} with the following hyperparameters:
+Following the paper we classify with a Subspace $k$-nearest-neighbours ensemble \cite{ho1998random, cover1967nearest}: 80 learners, each fitting a 1-NN classifier on a random 190-dimensional subspace of the feature space (seed 34), combined by soft vote. The paper searched 40--100 learners and subspace dimensions 170--210 and selected 80 and 190, which we adopt. This low-capacity, distance-based ensemble suits our small samples --- Bruna and Mallat note that such classifiers outperform more flexible discriminative ones (e.g.\ kernel SVMs) when training data are scarce \cite{bruna2013invariant}, which is especially relevant for the $n\approx115$ mass set. Features are standardised with \texttt{StandardScaler} \cite{pedregosa2011scikit} before classification (k-NN is scale-sensitive); the paper does not mention standardising the WS features, so this is a deviation that may affect results.
 
-\begin{itemize}
-    \item Number of ensemble learners: 80.
-    \item Subspace dimensionality: 190 features (randomly selected per learner from the full 406-dimensional feature space).
-    \item Number of neighbours: $k = 1$.
-    \item Random seed: 34.
-\end{itemize}
-
-Each learner independently projects the data onto a random 190-dimensional subspace, fits a 1-nearest-neighbour classifier, and produces a class probability estimate. The final prediction is the soft vote (average probability) across all 80 learners. This ensemble approach improves robustness by averaging over many diverse views of the high-dimensional feature space. Beyond matching the reference paper, this choice is also well-suited to our small sample sizes: Bruna and Mallat observe that low-capacity / generative classifiers tend to outperform more flexible discriminative classifiers (such as kernel SVMs) when training samples are scarce, the discriminative classifiers only overtaking them as the training set grows \cite{bruna2013invariant}. A simple distance-based ensemble is therefore a reasonable estimator for our tasks, and especially for the small ($n \approx 115$) mass set. Table~\ref{tab:knn_settings} lists the classifier hyperparameters.
-
-\begin{table}[h]
-\centering
-\caption[Subspace k-NN ensemble classifier settings]{Subspace k-NN ensemble classifier settings. The paper tested several values and selected the optimal ones shown; we adopt the same optimal values.}
-\label{tab:knn_settings}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Parameter} & \textbf{Values tested \cite{razali2023cnn}} & \textbf{Paper optimal} & \textbf{Ours} \\
-\midrule
-Ensemble method   & Subspace, AdaBoost, RUSBoost & Subspace         & Subspace \\
-Learner type      & Nearest neighbour, Discriminant & Nearest neighbour & Nearest neighbour \\
-Number of learners ($k$) & 40, 60, 80, 100         & 80               & 80 \\
-Subspace dimension       & 170, 190, 210            & 190              & 190 \\
-Number of neighbours     & ---                       & 1                & 1 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The feature matrix is standardised using \texttt{StandardScaler} from scikit-learn \cite{pedregosa2011scikit} (zero mean, unit variance) before classification, as $k$-NN is distance-based and sensitive to feature scaling. Note that the paper does not mention applying standardisation to the WS features before classification; this is a difference in our pipeline that may affect results.
-
-\textbf{Train--test split.} The 434 patches are split 80/20 into training and test sets, stratified by class, with a fixed random seed of 34 for reproducibility. The split is performed at the \emph{image} level (on unique \texttt{file\_id} values) rather than at the patch level, so that all patches extracted from the same mammogram remain together in either the training or the test partition. This yields 344 training patches (199 fatty, 145 fibroglandular) and 90 test patches (52 fatty, 38 fibroglandular). Cross-validation likewise uses scikit-learn's \texttt{StratifiedGroupKFold} \cite{pedregosa2011scikit} with \texttt{file\_id} as the group label. The rationale for adopting image-level splitting, and the issue that prompted the change, is described in Section~\ref{sec:results} (Stage~2).
+\textbf{Train--test split.} Patches are split 80/20, stratified by class, at the \emph{image} level (on unique \texttt{file\_id}) rather than the patch level, so all patches from one mammogram stay in the same partition; for the tissue task this gives 344 training and 90 test patches. Cross-validation uses \texttt{StratifiedGroupKFold} \cite{pedregosa2011scikit} with \texttt{file\_id} as the group. The rationale --- and the leakage issue that prompted image-level splitting --- is given in Section~\ref{sec:results} (Stage~2).
 
 
 \section{Mass ROI Extraction} \label{sec:mass_rois}
 
-For the benign versus malignant mass classification task, mass ROIs are obtained from the INbreast XML annotations (the OsiriX plist files described in Section~\ref{sec:dataset}). Each annotation supplies a bounding box for the lesion. The paper refers generically to ``the mass detection algorithm'' but does not specify which detector; we therefore use the dataset's expert annotations directly, which is the standard usage of INbreast. The procedure, implemented in \textit{Step 1.2 --- Mass ROI Extraction}, is:
+For the mass task, ROIs come from the INbreast XML annotations (Section~\ref{sec:dataset}); the paper refers only to ``the mass detection algorithm'' without specifying it, so we use the dataset's expert annotations directly (\textit{Step 1.2}). Each \texttt{Mass} bounding box is cropped from the already-preprocessed image --- inheriting the same normalisation, masking, pectoral removal and CLAHE --- resized to $224 \times 224$, and saved as float32. Labels follow the BI-RADS assessment (2--3 $\rightarrow$ benign, 4a--6 $\rightarrow$ malignant). This yields 116 mass patches (75 malignant, 41 benign) against the paper's 112 (76, 36); the small discrepancy --- our retention of all \texttt{Name="Mass"} ROIs (including multi-ROI images) and the paper's apparent inclusion of some asymmetry/distortion findings --- is reconciled in Section~\ref{sec:mass_count_discussion}.
 
-\begin{enumerate}
-    \item Parse the XML bounding box for each ``Mass'' ROI, yielding $(y_0, y_1, x_0, x_1)$ coordinates.
-    \item Crop the corresponding region from the already-preprocessed full image at \texttt{data/outputs/preprocessed/final/}, so the mass patch inherits the same percentile-clip normalisation, breast mask, pectoral removal, and CLAHE enhancement applied to the background patches.
-    \item Resize the crop to $224 \times 224$ pixels using area-based interpolation, clip values to $[0, 1]$, and save as a float32 NumPy array.
-\end{enumerate}
-
-The label is assigned from the BI-RADS assessment: BI-RADS 2--3 $\rightarrow$ benign (class~0), and BI-RADS 4a/4b/4c/5/6 $\rightarrow$ malignant (class~1). This is the standard clinical convention. The paper does not state its exact mapping, which is a minor source of ambiguity. The procedure yields 116 mass patches (75 malignant + 41 benign); the paper reports 112 (76 + 36). A fuller reconciliation of this small discrepancy --- which we attribute mainly to our retention of all \texttt{Name="Mass"} ROIs (including the few images with multiple mass ROIs) and to the paper's apparent inclusion of some asymmetry/distortion findings as ``mass tissue'' rather than to the BI-RADS threshold --- is given in Section~\ref{sec:mass_count_discussion}.
 
 \section{CNN Branch: ResNet18 Fine-Tuning and Feature Extraction} \label{sec:cnn}
 
-The paper's CNN branch (Model~1 in their Table~6) uses ResNet18 \cite{he2016deep} pre-trained on ImageNet, with the final fully connected layer replaced to output two classes. The paper deliberately selects the comparatively shallow ResNet18 over deeper residual networks (ResNet50/101): with only a few hundred training patches per task, a shallower network is less prone to overfitting and to the information loss that accumulates in very deep architectures on small datasets~\cite{yu2019abnormality}. We replicate this in PyTorch via \texttt{torchvision.models.resnet18(weights=IMAGENET1K\_V1)}, with the FC layer redefined as a $512 \to 2$ linear projection. All layers are fine-tuned (no freezing), matching MATLAB's default \texttt{trainNetwork} behaviour. To meet ResNet's 3-channel input requirement, each single-channel patch is replicated three times and normalised with the standard ImageNet mean and standard deviation. No data augmentation is applied, in line with the paper.
+The paper's CNN branch (its Model~1) fine-tunes an ImageNet-pretrained ResNet18 \cite{he2016deep} --- chosen over deeper networks because a shallow model overfits less on a few hundred patches \cite{yu2019abnormality} --- with the final layer replaced by a $512 \to 2$ projection. We replicate this in PyTorch (\texttt{resnet18(weights=IMAGENET1K\_V1)}), fine-tuning all layers (matching the paper's MATLAB default), replicating each single-channel patch to three channels with ImageNet normalisation, and applying no augmentation. Training follows the paper's Table~4 exactly: Adam ($\eta=10^{-3}$, $\beta=(0.9,0.999)$), $L_2$ weight decay $10^{-4}$, cross-entropy loss, 60 epochs, batch size 80. We then extract the 512-dimensional average-pool features via a forward hook, standardise them, and classify with the same Subspace k-NN ensemble (Section~\ref{sec:classifier}).
 
-The hyperparameters follow Table~4 of the paper exactly:
-
-\begin{itemize}
-    \item Optimiser: Adam, learning rate $\eta = 0.001$, $\beta_1 = 0.9$, $\beta_2 = 0.999$.
-    \item $L_2$ weight decay: $1 \times 10^{-4}$.
-    \item Loss: cross-entropy.
-    \item Number of epochs: 60.
-    \item Mini-batch size: 80.
-\end{itemize}
-
-After fine-tuning, 512-dimensional feature vectors are extracted from the average-pooling layer of the trained network via a forward hook --- i.e.\ from the penultimate layer, before the final FC. These features are then standardised with \texttt{StandardScaler} and classified by the same Subspace k-NN ensemble described in Section~\ref{sec:classifier}, matching the paper's pipeline for Model~1.
-
-\textbf{Validation set for overfitting tracking.} In addition to the 80/20 train--test split, we carve a $\sim$20\% validation set from the training images (image-level) and track its loss and accuracy at each epoch. This is an additional diagnostic not described in the paper, included to track the CNN overfitting expected on a sample this small (a concern the paper itself emphasises); the diagnostic results are presented in Section~\ref{sec:results} (Stage~4 and Stage~5b). The validation patches are excluded from gradient updates but re-included for the subsequent k-NN feature extraction so that the classifier sees the same training set as the paper.
-
-
-\section{Region-aware WS-map CNN head (extension)} \label{sec:region_aware_method}
-
-This extension, developed for the mass task, keeps the spatial scattering maps and conditions them on lesion morphology rather than collapsing them to a scalar vector. It has four ingredients.
-
-\textbf{Region masks from polygon ROIs.} For each mass, the OsiriX XML \texttt{Name="Mass"} polygon is rasterised to a binary lesion mask on the preprocessed image. From this single outline, four lesion-relative regions are derived by morphological operations: a \emph{full} region (the lesion with a small surrounding margin), an \emph{inner} region (the eroded core), a \emph{boundary} region (a dilated-minus-eroded annulus straddling the margin), and a \emph{context} region (a dilated surround with the lesion removed). The erosion/dilation structuring elements are sized as a fraction of the lesion bounding box, so the decomposition scales with lesion size. Each region mask is applied to the patch, giving four region images per lesion.
-
-\textbf{$J=3$ scattering maps.} Each region image is passed through the same Kymatio scattering transform but at $J=3$ rather than the paper's $J=6$. This retains a $28\times28$ spatial grid of $91$ coefficient channels per region, instead of collapsing to the near-scalar $3\times3$ grid that $J=6$ produces. Stacking the four regions gives a $4\times91$-channel, $28\times28$ scattering-map tensor per lesion that preserves \emph{where} coefficient energy sits within each lesion sub-region.
-
-\textbf{WS-map CNN head.} A small convolutional network is trained directly on these scattering-map tensors: two $3\times3$ convolutional blocks (Conv--BatchNorm--ReLU, $32$ channels), global average pooling, dropout ($0.5$), and a linear classifier, optimised with Adam ($\eta=10^{-3}$, weight decay $3\times10^{-4}$) for $60$ epochs at batch size $24$. The CNN learns spatial relationships across the region maps that a hand-pooled scalar summary discards; this is the main methodological extension of the project.
-
-\textbf{Comparators.} Two controlled comparators accompany the WS-map CNN. (i)~A \emph{classical} region-aware baseline pools each region map to per-channel statistics and classifies the concatenated vector with logistic regression or the Subspace k-NN ensemble, isolating the value of the region decomposition from the value of the learned head. (ii)~An \emph{improved CNN} comparator extracts $512$-d features from a \emph{frozen} ImageNet ResNet18 on a square lesion crop and classifies them with logistic regression --- a stable, fine-tuning-free CNN baseline. Finally, \emph{late} (decision-level) fusion averages the predicted malignancy probabilities of the region-aware WS$\rightarrow$CNN and the improved CNN, in contrast to the paper's feature-level concatenation.
+\textbf{Validation set.} As a diagnostic not in the paper, we carve a $\sim$20\% image-level validation set from the training images to track per-epoch overfitting (Section~\ref{sec:results}); these patches are excluded from gradient updates but re-included for k-NN feature extraction, so the classifier sees the same training set as the paper.
 
 
 \section{Final evaluation protocol and reporting} \label{sec:eval_protocol}
 
-The development narrative in Section~\ref{sec:results} reports each stage on a single fixed image-level split (seed~34) with group-aware 10-fold cross-validation, reflecting how the experiments were originally run. For the \emph{final} comparison of the headline methods this is not enough on its own: the mass held-out set contains only ${\sim}25$ patches from ${\sim}22$ images (${\sim}24$ once the data-quality filter of Section~\ref{sec:mass_quality_filter} is applied), so a single additional misclassification shifts test accuracy by ${\sim}4$~pp, and a single split can swing by $10$~pp or more between seeds. The final evaluation protocol therefore follows four principles.
-
+The development narrative in Section~\ref{sec:results} reports each stage on a single seed-34 image-level split with group-aware 10-fold cross-validation. This is not enough for the headline comparison: the mass held-out set is only ${\sim}25$ patches (${\sim}24$ after the data-quality filter of Section~\ref{sec:mass_quality_filter}), so one extra misclassification shifts accuracy by ${\sim}4$~pp and a single split can swing $10$~pp between seeds. The final protocol therefore follows four principles:
 \begin{enumerate}
-    \item \textbf{Repeated, image-level splits.} Each headline method is evaluated over five repeated stratified train/test splits (seeds $\{1, 7, 34, 42, 99\}$), each grouped by \texttt{file\_id} so that no patches or ROIs from the same mammogram fall in both the training and test partitions. Reporting the spread across seeds, rather than one fixed split, exposes the split sensitivity that a single number conceals.
-    \item \textbf{Leakage-free feature extraction.} Where a method uses a trained feature extractor (the CNN branch), the network is \emph{retrained inside each split} on that split's training images only, so the test features come from a model that never saw them.
-    \item \textbf{Training-only scaling.} The \texttt{StandardScaler} is fitted on the training fold only and then applied to the test fold, so that no test statistics influence training.
-    \item \textbf{AUROC-led reporting under class imbalance.} The mass task is imbalanced ($74$ malignant vs.\ $41$ benign), so raw accuracy is misleading: a trivial ``always malignant'' rule already scores the ${\sim}68\%$ majority baseline. We therefore lead with the area under the ROC curve (AU-ROC), which is threshold-independent and unaffected by class prevalence, and report accuracy, precision, recall, and F1 alongside it. All metrics are quoted as mean~$\pm$~standard deviation across the five seeds.
+    \item \textbf{Repeated, image-level splits.} Each method is evaluated over five stratified splits (seeds $\{1,7,34,42,99\}$), grouped by \texttt{file\_id} so no mammogram's patches cross the train/test boundary; the spread across seeds exposes the split sensitivity a single number hides.
+    \item \textbf{Leakage-free feature extraction.} Any trained extractor (the CNN) is retrained inside each split on that split's training images only.
+    \item \textbf{Training-only scaling.} \texttt{StandardScaler} is fitted on the training fold alone.
+    \item \textbf{AUROC-led reporting.} As the mass task is imbalanced ($74$ malignant vs.\ $41$ benign; a trivial ``always malignant'' rule scores the ${\sim}68\%$ majority baseline), we lead with the threshold-independent AU-ROC and report accuracy, precision, recall and F1 alongside it, all as mean~$\pm$~standard deviation over the five seeds.
 \end{enumerate}
 
-Five seeds is a deliberate trade-off: enough to reveal the across-seed variability while keeping every headline method on a common, reproducible set of splits. Because all seeds resample the same ${\sim}115$ mass patches, the reported standard deviation should be read as an indicator of split sensitivity on a small dataset, not as a tight confidence interval. Cross-validation is not used as a headline metric: the repeated held-out splits already give an out-of-sample estimate, and cross-validation computed on \emph{learned} CNN features is optimistic because the feature extractor has already seen the inner-validation images. The consolidated comparison under this protocol is produced by the canonical \textit{FINAL Step~2.1--2.5} notebooks.
-
-
-\textbf{Reproducibility.} All randomness is pinned per run: the Python, NumPy and PyTorch seeds are set together, and wherever a CNN is trained, cuDNN is placed in deterministic mode (\texttt{torch.backends.cudnn.deterministic=True}, \texttt{benchmark=False}) so that repeated runs of the same seed agree. The canonical diagnostic seed is~$34$; the headline numbers additionally average the five image-level seeds $\{1,7,34,42,99\}$. For the learned WS-map CNN head, which is trained on only ${\sim}90$ patches, we report a five-seed mean~$\pm$~standard deviation and corroborate it with a more stable group-aware cross-validation rather than relying on any single split (Chapter~\ref{sec:discussion}).
+Because all seeds resample the same ${\sim}115$ mass patches, the standard deviation indicates split sensitivity rather than a tight confidence interval. Cross-validation is not a headline metric: the repeated holdout already gives an out-of-sample estimate, and CV on \emph{learned} CNN features is optimistic because the extractor has seen the inner-validation images. For reproducibility, the Python, NumPy and PyTorch seeds are pinned together and cuDNN is placed in deterministic mode; seed~34 is the canonical diagnostic seed, and the learned WS-map CNN head (trained on only ${\sim}90$ patches) is additionally corroborated by a group-aware cross-validation rather than a single split (Chapter~\ref{sec:discussion}).
 
 
 % ============================================================
