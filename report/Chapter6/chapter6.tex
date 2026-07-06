@@ -1,12 +1,12 @@
 %!TEX root = ../thesis.tex
-% Chapter --- Discussion
+% Chapter: Discussion
 
 \chapter{Discussion} \label{sec:discussion}
 
 The paper-style replication reproduces all three of Razali et al.'s configurations on
 both tasks (Chapter~\ref{sec:results}); the project's substantive result lies beyond it,
 in the mass extensions (Chapter~\ref{sec:extensions}), where preserving the
-wavelet-scattering \emph{spatial map} --- rather than enriching a scalar descriptor ---
+wavelet-scattering spatial map, rather than enriching a scalar descriptor,
 is the decisive lever. This chapter interprets the replication against the paper, draws
 out what the extensions establish, critiques the paper's single-split evaluation protocol
 and defines the leakage-free one used here, and sets out the data-provenance caveats and
@@ -14,53 +14,52 @@ limitations that qualify the numbers.
 
 \section{Interpreting the replication: where fusion helps, and why}
 
-The CNN~+~WS fusion evaluated here is a faithful instance of the paper's Model~5 --- a
+The CNN~+~WS fusion evaluated here is a faithful instance of the paper's Model~5: a
 training-fold-standardised concatenation of the $512$-dimensional CNN average-pool vector
 and the $406$-dimensional wavelet-scattering vector, classified by the same Subspace k-NN
 ensemble, with no GLCM branch. Its interpretive upshot, read against the four
 implementation differences listed in Chapter~\ref{sec:results}, is that the paper's
-central mechanism --- handcrafted scattering features rescuing a data-starved CNN --- is
+central mechanism, handcrafted scattering features rescuing a data-starved CNN, is
 reproduced \emph{exactly in the regime the paper invokes it, and only there}. On
 \textbf{tissue}, our CNN does not overfit (test ${\sim}98\%$, AU-ROC $0.979$; an overfit
 gap of ${\sim}2$~pp against the paper's $21.6$~pp), so fusion has almost nothing to add:
 CNN~+~WS ($0.988$) is statistically close to CNN-only ($0.979$), and the large fusion
 gain the paper reports ($77.4\% \rightarrow 93.5\%$ test) does not appear, because the
 deficit it compensates is absent under our cleaner preprocessing. On \textbf{mass}, the
-CNN genuinely overfits --- training accuracy saturates by epoch~10 while validation
-oscillates in the $60$--$90\%$ band (Figure~\ref{fig:mass_overfit}) --- and adding the
+CNN genuinely overfits (training accuracy saturates by epoch~10 while validation
+oscillates in the $60$--$90\%$ band, Figure~\ref{fig:mass_overfit}) and adding the
 training-free scattering features lifts the honest, leakage-free result: fusion (AU-ROC
 $0.816$) outranks both CNN-only ($0.762$) and WS-only ($0.726$). This is the clearest
 evidence in the project that fusion helps, and it reproduces the paper's qualitative claim
-on the mass task while showing precisely why that claim does \emph{not} transfer to our
+on the mass task while showing precisely why that claim does not transfer to our
 tissue pipeline.
 
-The paper's headline mass result (CNN~+~WS, $91.7\%$ test, AU-ROC $1.00$) rests on a single
-${\sim}25$-patch split: our cross-validation reproduces its ${\approx}98\%$, but the honest
-repeated held-out estimate is lower and noisier ($0.816 \pm 0.057$). We affirm the qualitative
-claim that fusion benefits the mass task; why the $1.00$ itself is not a stable target is taken
+The paper's headline mass fusion result rests on a single ${\sim}22$-patch split; our
+cross-validation reproduces its ${\approx}98\%$, but the honest repeated held-out estimate is
+lower and noisier ($0.816 \pm 0.057$). Why that $1.00$ is not a stable target is taken
 up in Section~\ref{sec:eval_disc}.
 
 \section{The WS-only tissue gap and what closes it}
 
 The single largest replication discrepancy is the ${\sim}7$~pp shortfall on WS-only tissue
-(AU-ROC $0.895$ against the paper's $0.94$). Of the plausible causes --- density-aware
+(AU-ROC $0.895$ against the paper's $0.94$). Of the plausible causes, density-aware
 contrast enhancement, the Kymatio-versus-MATLAB library convention ($406$ versus $391$
-coefficients), and ACR-guided patch sampling --- we cannot fully disentangle the three, but
+coefficients), and ACR-guided patch sampling, we cannot fully disentangle the three, but
 contrast enhancement is the leading candidate: wavelet scattering is a textural descriptor of
 frequency content, and the paper's density-aware histogram adjustment amplifies exactly the
 density-specific contrast the tissue task measures, whereas our density-agnostic CLAHE does not. The more consequential
-observation, however, is that this gap is closed \emph{and substantially exceeded} by
+observation, however, is that this gap is closed and substantially exceeded by
 changing the representation rather than the preprocessing: on the same patches and pipeline,
 the adapted scattering covariance (Section~\ref{sec:scov_tissue}) reaches AU-ROC $0.984$,
 $+0.089$ over averaged WS, because the standard $S_0, S_1, S_2$ coefficients undersample the
 cross-scale and cross-orientation structure that covariance exposes. The ceiling on the WS
 branch for this project is therefore set by the richness of the descriptor, not by the
-contrast operation. On \emph{mass}, by contrast, the same richer scalar descriptor gives no
-gain ($0.734$ versus $0.726$) --- foreshadowing the central extension result below.
+contrast operation. On mass, by contrast, the same richer scalar descriptor gives no
+gain ($0.734$ versus $0.726$), foreshadowing the central extension result below.
 
 \section{What the extensions establish}
 
-The extension experiments converge on one message: for the mass task, \emph{preserving
+The extensions establish one thing for the mass task: \emph{preserving
 spatial and lesion structure in the wavelet-scattering representation matters more than
 changing the scalar features or the classifier}. The screen of
 Section~\ref{sec:screening} shows that normalisation, per-path statistics, coarse pooling,
@@ -71,26 +70,26 @@ spatial maps and learns over them instead of averaging them away. Conditioning t
 on lesion morphology lifts the classical model from $0.801$ to $0.892$, and a learned CNN
 head over the region-aware maps reaches $0.946$. A lighter, masked/no-CLAHE input lifts this
 region-aware head further to AU-ROC $0.971$ (Section~\ref{sec:region_noclahe}), consistent with
-CLAHE's local contrast enhancement distorting the scattering energy the descriptor relies on ---
+CLAHE's local contrast enhancement distorting the scattering energy the descriptor relies on;
 reported as a preprocessing-sensitivity result, not a change to the paper-style replication.
 
-The contrast with tissue is the interpretive key. Tissue density is a texture problem that
-a richer \emph{scalar} descriptor already solves ($0.984$), with no need to retain spatial
-layout; mass is a structured-object problem in which \emph{where} the signal sits --- core
-versus margin versus context --- is decisive, so the scalar route plateaus and the spatial
+The contrast with tissue explains why. Tissue density is a texture problem that
+a richer scalar descriptor already solves ($0.984$), with no need to retain spatial
+layout; mass is a structured-object problem in which \emph{where} the signal sits (core
+versus margin versus context) is decisive, so the scalar route plateaus and the spatial
 route succeeds. Region-aware preservation is therefore the project's principal extension on
-the mass side. The CNN and fusion methods support that
-conclusion rather than supplant it: the region-aware late fusion is numerically strongest
+the mass side. The CNN and fusion methods reinforce that
+conclusion rather than overturn it: the region-aware late fusion is numerically strongest
 ($0.948$), but it is a decision-level combination of two trained models whose margin over
-the region-aware WS$\rightarrow$CNN alone is within seed noise --- so it is reported as the
-best \emph{number} while the region-aware representation is the substantive \emph{result}.
+the region-aware WS$\rightarrow$CNN alone is within seed noise, so it is reported as the
+best \emph{number} while the region-aware representation is the substantive result.
 
 \section{Evaluation: the paper's protocol and ours} \label{sec:eval_disc}
 
 \textbf{The paper's point-estimate protocol.} A methodological weakness of the paper
-compounds the small mass sample: it reports single-split point estimates --- most
-strikingly a mass CNN~+~WS AU-ROC of $1.00$ and $91.7\%$ accuracy --- on a held-out set of
-only ${\sim}25$ patches, with no measure of variance. At that size a single misclassification
+compounds the small mass sample: it reports single-split point estimates, most
+strikingly a mass CNN~+~WS AU-ROC of $1.00$ and $91.7\%$ accuracy, on a held-out set of
+only ${\sim}22$ patches, with no measure of variance. At that size a single misclassification
 shifts accuracy by ${\sim}4$~pp, and across our five seeds the same method's held-out mass
 AU-ROC ranges from roughly $0.70$ to $0.76$; a lone favourable split can therefore read as
 $1.00$. A point estimate at this sample size is neither reproducible nor a meaningful
@@ -113,31 +112,30 @@ patches; the mitigation is to average five seeds and corroborate with the tighte
 group-aware cross-validation ($0.919 \pm 0.012$), which is far less split-sensitive than any
 single held-out split.
 
-\textbf{Optimistic CV on learned features.} Cross-validation computed on \emph{learned} CNN
+\textbf{Optimistic CV on learned features.} Cross-validation computed on learned CNN
 or fusion features is optimistic, because the extractor has effectively already seen the
 inner-validation fold; the ${\sim}0.99$ mass CV figures (marked ``(opt.)'' in
 Table~\ref{tab:results_mass}) are not out-of-sample estimates, whereas the five-seed
 held-out AU-ROCs ($0.762$ and $0.816$) are. The project therefore leads with held-out AU-ROC
-as the mass headline and uses group-aware CV only as a stability check --- and, for the
+as the mass headline and uses group-aware CV only as a stability check, and, for the
 classical WS methods where nothing is learned, as a like-for-like comparison with the paper.
 
 \section{Data provenance and quality}
 
-Three data-provenance issues surfaced during the project; each is documented in full in the
-Step~0--2 notebooks, and none changes the qualitative conclusions.
+Three data-provenance issues surfaced during the project, and none changes the qualitative conclusions.
 
 \textbf{Mass patch count.} \label{sec:mass_count_discussion} Our reproducible \texttt{Name="Mass"} XML extraction yields $116$
 patches across $107$ images ($75$ malignant, $41$ benign), against the paper's $112$
 ($76+36$). The difference arises from two editorial choices the paper leaves undocumented:
-we retain all mass ROIs (eight images carry more than one --- a mix of near-duplicate
+we retain all mass ROIs (eight images carry more than one: a mix of near-duplicate
 annotations and genuinely multifocal disease), and we admit only ROIs literally tagged
 \texttt{Mass}, whereas the paper appears to fold in a few architectural-distortion and
 asymmetry findings. Ours is exactly reproducible from the public XML; the paper's requires
 per-image judgement. Because the split is image-level, the extra ROIs add slight within-fold
 redundancy but no leakage, and the difference sits well below the mass test-set noise floor.
 
-\textbf{Data-quality filter.} \label{sec:mass_quality_filter} One annotation ---
-\texttt{file\_id 50994354}, BI-RADS~4a, view \texttt{MG\_R\_ML} --- has a bounding box that
+\textbf{Data-quality filter.} \label{sec:mass_quality_filter} One annotation,
+\texttt{file\_id 50994354}, BI-RADS~4a, view \texttt{MG\_R\_ML}, has a bounding box that
 falls entirely outside the breast mask (an annotation/orientation mismatch unique to this
 file), so cropping it from the masked image gives a uniformly-zero patch. A dynamic one-line
 filter (\texttt{patch.max() > 0}) excludes it, reducing the mass set to the \textbf{115
@@ -151,12 +149,11 @@ agree. For lesion presence, the XLS \texttt{Mass} column flags $108$ files and t
 \texttt{Mass} ROIs $107$, agreeing on $106$; the three disagreements are two low-acuity
 BI-RADS-2 XLS-only cases and one high-acuity BI-RADS-4c XML-only case (\texttt{24065584}).
 The pipeline takes ROIs from the XML because it needs polygon coordinates, which happens to
-trade two benign cases for one high-acuity malignant one --- a shift well below the mass
+trade two benign cases for one high-acuity malignant one, a shift well below the mass
 test-set noise floor. For pectoral masks, the
 LabelMe-JSON source ($202$ MLO views) and the Apple-plist XML source ($201$) agree on $199$
 files and differ only in outline style; the choice has negligible downstream effect because
 the Otsu breast mask and the patch sampler's minimum target-fraction absorb the difference.
-The full audit is in the \textit{Step 0.3} notebook.
 
 \section{Limitations}
 
@@ -167,7 +164,7 @@ The full audit is in the \textit{Step 0.3} notebook.
     would require external, multi-site validation before it could be trusted.
     \item \textbf{Single dataset.} Only INbreast is used; cross-dataset generalisation (e.g.\
     DDSM, MIAS) is untested.
-    \item \textbf{No augmentation.} Following the paper, no augmentation is used --- the most
+    \item \textbf{No augmentation.} Following the paper, no augmentation is used: the most
     obvious lever left for the observed CNN overfitting. Because augmentation could have narrowed
     the very mass-CNN overfitting that fusion compensates, part of the measured fusion benefit
     may reflect this choice rather than an intrinsic advantage of handcrafted features.
