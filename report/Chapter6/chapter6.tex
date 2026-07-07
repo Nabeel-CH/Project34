@@ -4,10 +4,9 @@
 \chapter{Discussion} \label{sec:discussion}
 
 The paper-style replication reproduces all three of Razali et al.'s configurations on
-both tasks (Chapter~\ref{sec:results}); the project's substantive result lies beyond it,
-in the mass extensions (Chapter~\ref{sec:extensions}), where preserving the
-wavelet-scattering spatial map, rather than enriching a scalar descriptor,
-is the decisive lever. This chapter interprets the replication against the paper, draws
+both tasks (Chapter~\ref{sec:results}). The project's main result lies beyond it,
+in the mass extensions (Chapter~\ref{sec:extensions}): preserving the
+wavelet-scattering spatial map is the decisive lever. This chapter interprets the replication against the paper, draws
 out what the extensions establish, critiques the paper's single-split evaluation protocol
 and defines the leakage-free one used here, and sets out the data-provenance caveats and
 limitations that qualify the numbers.
@@ -17,10 +16,10 @@ limitations that qualify the numbers.
 The CNN~+~WS fusion evaluated here is a faithful instance of the paper's Model~5: a
 training-fold-standardised concatenation of the $512$-dimensional CNN average-pool vector
 and the $406$-dimensional wavelet-scattering vector, classified by the same Subspace k-NN
-ensemble, with no GLCM branch. Its interpretive upshot, read against the four
-implementation differences listed in Chapter~\ref{sec:results}, is that the paper's
-central mechanism, handcrafted scattering features rescuing a data-starved CNN, is
-reproduced \emph{exactly in the regime the paper invokes it, and only there}. On
+ensemble, with no GLCM branch. Read against the four implementation differences in Chapter~\ref{sec:results}, the
+interpretation is clear: the paper's central mechanism (handcrafted scattering features
+rescuing a data-starved CNN) reproduces \emph{exactly in the regime the paper invokes it,
+and only there}. On
 \textbf{tissue}, our CNN does not overfit (test ${\sim}98\%$, AU-ROC $0.979$; an overfit
 gap of ${\sim}2$~pp against the paper's $21.6$~pp), so fusion has almost nothing to add:
 CNN~+~WS ($0.988$) is statistically close to CNN-only ($0.979$), and the large fusion
@@ -28,14 +27,13 @@ gain the paper reports ($77.4\% \rightarrow 93.5\%$ test) does not appear, becau
 deficit it compensates is absent under our cleaner preprocessing. On \textbf{mass}, the
 CNN genuinely overfits (training accuracy saturates by epoch~10 while validation
 oscillates in the $60$--$90\%$ band, Figure~\ref{fig:mass_overfit}) and adding the
-training-free scattering features lifts the honest, leakage-free result: fusion (AU-ROC
-$0.816$) outranks both CNN-only ($0.762$) and WS-only ($0.726$). This is the clearest
-evidence in the project that fusion helps, and it reproduces the paper's qualitative claim
-on the mass task while showing precisely why that claim does not transfer to our
+training-free scattering features lifts the leakage-free result: fusion (AU-ROC
+$0.816$) outranks both CNN-only ($0.762$) and WS-only ($0.726$). This is where fusion helps: it reproduces the paper's qualitative claim
+on the mass task, and shows precisely why that claim does not transfer to our
 tissue pipeline.
 
 The paper's headline mass fusion result rests on a single ${\sim}22$-patch split; our
-cross-validation reproduces its ${\approx}98\%$, but the honest repeated held-out estimate is
+cross-validation reproduces its ${\approx}98\%$, but the repeated held-out estimate is
 lower and noisier ($0.816 \pm 0.057$). Why that $1.00$ is not a stable target is taken
 up in Section~\ref{sec:eval_disc}.
 
@@ -70,8 +68,7 @@ spatial maps and learns over them instead of averaging them away. Conditioning t
 on lesion morphology lifts the classical model from $0.801$ to $0.892$, and a learned CNN
 head over the region-aware maps reaches $0.946$. A lighter, masked/no-CLAHE input lifts this
 region-aware head further to AU-ROC $0.971$ (Section~\ref{sec:region_noclahe}), consistent with
-CLAHE's local contrast enhancement distorting the scattering energy the descriptor relies on;
-reported as a preprocessing-sensitivity result, not a change to the paper-style replication.
+CLAHE's local contrast enhancement distorting the scattering energy the descriptor relies on.
 
 The contrast with tissue explains why. Tissue density is a texture problem that
 a richer scalar descriptor already solves ($0.984$), with no need to retain spatial
@@ -82,7 +79,7 @@ the mass side. The CNN and fusion methods reinforce that
 conclusion rather than overturn it: the region-aware late fusion is numerically strongest
 ($0.948$), but it is a decision-level combination of two trained models whose margin over
 the region-aware WS$\rightarrow$CNN alone is within seed noise, so it is reported as the
-best \emph{number} while the region-aware representation is the substantive result.
+best \emph{number}, while the region-aware representation is the real contribution.
 
 \section{Evaluation: the paper's protocol and ours} \label{sec:eval_disc}
 

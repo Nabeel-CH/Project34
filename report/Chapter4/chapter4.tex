@@ -25,7 +25,7 @@ The CNN branch (Section~\ref{sec:cnn}) fine-tunes ResNet18 and is evaluated two 
 
 The benign-versus-malignant task (Section~\ref{sec:mass_rois}) applies both branches unchanged. The 116 mass patches built from the XML boxes (75 malignant, 41 benign; the paper has $76+36$) reduce to the 115-patch set the tables use once the data-quality filter drops one all-zero patch (Section~\ref{sec:mass_quality_filter}); the seed-34 split holds out 25 patches.
 
-\textbf{WS-only.} Seed-34 cross-validation accuracy was $71.1\% \pm 11.3\%$ and held-out AU-ROC $0.765$ (test accuracy $0.68$). Because the held-out set is $\sim$25 patches, a single split is uninformative (across the five seeds held-out AU-ROC ranges $0.70$--$0.76$ and accuracy $0.64$--$0.83$), so the five-seed mean is the honest figure: AU-ROC $0.726 \pm 0.030$, accuracy $0.701 \pm 0.075$ (Table~\ref{tab:results_mass}). The cross-validation accuracy is close to, and slightly above, the paper's $69\%$. Averaged WS is clearly a weaker descriptor for masses than for background tissue, consistent with the paper's observation that mass patches yield fewer discriminative scattering features.
+\textbf{WS-only.} Seed-34 cross-validation accuracy was $71.1\% \pm 11.3\%$ and held-out AU-ROC $0.765$ (test accuracy $0.68$). Because the held-out set is $\sim$25 patches, a single split is uninformative (across the five seeds held-out AU-ROC ranges $0.70$--$0.76$ and accuracy $0.64$--$0.83$), so the five-seed mean is the figure we report: AU-ROC $0.726 \pm 0.030$, accuracy $0.701 \pm 0.075$ (Table~\ref{tab:results_mass}). The cross-validation accuracy is close to, and slightly above, the paper's $69\%$. Averaged WS is clearly a weaker descriptor for masses than for background tissue, consistent with the paper's observation that mass patches yield fewer discriminative scattering features.
 
 \textbf{CNN-only.} A fresh ResNet18 (not warm-started from the tissue model) overfits sharply on the small sample: train $100\%$, validation $66.7\%$, test $84.0\%$ (overfit gap $16.0\%$). Under the paper protocol, cross-validation was $98.9\%$ (optimistic, see below) and held-out test accuracy $76.0\%$ at AU-ROC $0.750$ (Table~\ref{tab:results_mass}). The per-epoch curves show the paper's overfitting signature (Figure~\ref{fig:mass_overfit}): training accuracy saturates by epoch~10 while validation accuracy oscillates and validation loss climbs.
 
@@ -108,7 +108,7 @@ Tables~\ref{tab:results_tissue} and~\ref{tab:results_mass} consolidate all repli
 \end{tabular}
 
 \vspace{0.3em}
-{\small Held-out sets average $24$ patches across the five seeds (seed-34: $25$); see Section~\ref{sec:mass_quality_filter}. ``(opt.)'' marks optimistic CV on learned features. Scattering covariance gives no AU-ROC gain over averaged WS on mass; it is a tissue-side extension (Chapter~\ref{sec:extensions}); the mass gains come from the region-aware methods.}
+{\small Held-out sets average $24$ patches across the five seeds (seed-34: $25$); see Section~\ref{sec:mass_quality_filter}. ``(opt.)'' marks optimistic CV on learned features. Scattering covariance gives no AU-ROC gain over averaged WS on mass; it is a tissue-side extension (Chapter~\ref{sec:extensions}); the mass gains come from the region-aware methods. The majority baseline's high F1 ($0.801$) alongside its chance-level AU-ROC ($0.500$) is an artefact of always predicting the majority (malignant) class on this imbalanced set, which is why AU-ROC leads the reporting.}
 \end{table}
 
 \begin{figure}[h]

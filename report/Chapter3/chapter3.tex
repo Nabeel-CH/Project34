@@ -28,7 +28,7 @@ Each image passes through four stages, shown end-to-end for one example in Figur
 \label{fig:preproc_walkthrough}
 \end{figure}
 
-Preprocessed images and patches are stored as NumPy \texttt{.npy} arrays rather than PNG; an 8-bit-PNG round-trip changed no held-out result (feature-vector MAE $\sim$0.02\%), so this is a practical choice, not an accuracy one.
+Preprocessed images and patches are stored as NumPy \texttt{.npy} arrays rather than PNG; an 8-bit-PNG round-trip changed no held-out result (feature-vector MAE $\sim$0.02\%), so this is a practical choice with no effect on accuracy.
 
 \textbf{Differences from the reference paper.} Table~\ref{tab:preproc_comparison} summarises them. The most consequential is contrast enhancement: the paper uses a density-aware histogram adjustment (their reference [73]) that adapts to the ACR category, whereas our density-agnostic CLAHE forgoes exactly the density-specific contrast being classified, a likely source of the WS-tissue gap. The remaining differences (PNG conversion; seeded region growing versus ground-truth polygon masks) are tabulated.
 
@@ -106,7 +106,7 @@ The wavelet scattering transform gives a non-learned representation that is loca
 S_1 x = |x \star \psi_{\lambda_1}| \star \phi_J, \qquad
 S_2 x = ||x \star \psi_{\lambda_1}| \star \psi_{\lambda_2}| \star \phi_J,
 \]
-with $\psi_{\lambda}$ oriented wavelets; concatenating the orders gives the feature vector. We compute this with Kymatio \cite{andreux2020kymatio} at $J=6$ (invariance scale $2^J=64$~px), $L=5$ Morlet orientations \cite{morlet1982wave}, maximum order 2, on $224 \times 224$ patches, and spatially average each coefficient map to one scalar per path, a 406-dimensional vector. Table~\ref{tab:ws_config} sets this against the paper's configuration; the count differs (406 versus 391) only because Kymatio uses all six scales with $L=5$ where MATLAB reserves one scale for the low-pass filter and uses $L=6$ (both follow $1 + JL + \binom{J}{2} L^2$ for the respective $J,L$), a library convention, not a modelling choice.
+with $\psi_{\lambda}$ oriented wavelets; concatenating the orders gives the feature vector. We compute this with Kymatio \cite{andreux2020kymatio} at $J=6$ (invariance scale $2^J=64$~px), $L=5$ Morlet orientations \cite{morlet1982wave}, maximum order 2, on $224 \times 224$ patches, and spatially average each coefficient map to one scalar per path, a 406-dimensional vector. Table~\ref{tab:ws_config} sets this against the paper's configuration; the count differs (406 versus 391) only because Kymatio uses all six scales with $L=5$ where MATLAB reserves one scale for the low-pass filter and uses $L=6$ (both follow $1 + JL + \binom{J}{2} L^2$ for the respective $J,L$), a library convention with no modelling significance.
 
 \textbf{Order and invariance scale.} Both follow Bruna and Mallat \cite{bruna2013invariant}. Scattering energy decays exponentially with path length (over 99\% within $m\le3$), and second-order coefficients recover the higher-moment texture that first-order coefficients discard (enough to separate textures with identical power spectra), so order 2 is standard and higher orders add negligible energy. The large invariance scale suits the tissue task, which is stationary-texture discrimination: Bruna and Mallat show the optimal invariance scale then approaches the patch width (minimising estimator variance), so a large $J$, and the near-complete pooling it produces, is appropriate here.
 
