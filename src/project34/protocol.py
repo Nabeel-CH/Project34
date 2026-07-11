@@ -48,14 +48,14 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.decomposition import PCA
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 
 __all__ = [
     "SEEDS", "DIAG_SEED", "set_seed", "find_project_root", "standard_paths",
     "SubspaceKNN", "AdaptivePCAKNN",
     "sknn_pipe", "logreg_pipe", "svm_pipe", "pca32_logreg",
     "image_split", "holdout5", "cv_seed34",
-    "show", "record", "build_results_table",
+    "show", "record", "build_results_table", "metrics",
 ]
 
 # --------------------------------------------------------------------------- #
@@ -261,3 +261,11 @@ def build_results_table(rows, save_path=None):
     if save_path is not None:
         df.to_csv(save_path, index=False)
     return df
+
+
+def metrics(y, yp, pr):
+    """acc / AUROC / precision / recall / F1 as a dict (AUROC NaN if only one class)."""
+    return dict(test_acc=accuracy_score(y, yp),
+                auroc=roc_auc_score(y, pr) if len(np.unique(y)) > 1 else np.nan,
+                precision=precision_score(y, yp, zero_division=0),
+                recall=recall_score(y, yp, zero_division=0), f1=f1_score(y, yp, zero_division=0))
