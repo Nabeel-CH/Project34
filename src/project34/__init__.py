@@ -14,4 +14,4 @@ previously lived (duplicated) inside the FINAL Step 2 notebooks; importing it
 instead of redefining those helpers does not change any numerical result.
 """
 
-__all__ = ["protocol"]
+__all__ = ["protocol", "data", "preprocess", "patches"]
