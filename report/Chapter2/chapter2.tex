@@ -11,15 +11,88 @@ A radiologist reads each mammogram and records findings on the American College 
 
 \textbf{Tissue-density classification} decides whether a region of breast tissue is fatty or dense (fibroglandular). Density matters clinically because dense tissue both raises cancer risk and hides tumours behind overlapping tissue \cite{boyd2007mammographic}, and it is essentially a property of relatively uniform texture: the overall pattern of a region rather than any single structure within it. \textbf{Mass classification} decides whether a detected lesion is benign or malignant, and is a different kind of problem: the answer lies in a localised, structured object, whose diagnostic cues are the shape of its margin and the arrangement of its interior, not a uniform texture. This texture-versus-structure distinction, which recurs throughout, dictates how the scattering representation should be used.
 
-Both tasks turn on \emph{texture}: the spatial pattern of intensity variation rather than overall brightness. A classical way to quantify texture is the grey-level co-occurrence matrix \cite{haralick1973textural}, which tallies how often given pairs of grey levels occur at a fixed offset, but it captures a single scale, whereas breast structure appears at many sizes at once, from fine trabecular strands to broad glandular regions. A representation that measures structure across multiple scales is therefore better matched to the problem, which is what motivates wavelet-based features. Such handcrafted features are especially attractive here because they are computed by a fixed rule: they need no training data, are easy to interpret, and cannot overfit, decisive when annotated mammograms are scarce.
+Both tasks turn on \emph{texture}: the spatial pattern of intensity variation rather than overall brightness. A classical way to quantify texture is the grey-level co-occurrence matrix (GLCM) \cite{haralick1973textural}, which tallies how often given pairs of grey levels occur at a fixed offset, but it captures a single scale, whereas breast structure appears at many sizes at once, from fine trabecular strands to broad glandular regions. A representation that measures structure across multiple scales is therefore better matched to the problem, which is what motivates wavelet-based features. Such handcrafted features are especially attractive here because they are computed by a fixed rule: they need no training data, are easy to interpret, and cannot overfit, decisive when annotated mammograms are scarce.
 
 \section{Wavelets and the scattering transform} \label{sec:wst-bg}
 
 A wavelet is a small, localised oscillating waveform \cite{morlet1982wave}. Dilating and rotating a single ``mother'' wavelet produces a bank of filters, each tuned to a particular scale and orientation; representing an image through such a multi-scale filter bank is the basis of wavelet image analysis \cite{mallat1989theory}. Convolving an image with this bank measures how much oscillatory, edge-like content it contains at each scale, orientation and location: coarse wavelets respond to large, smooth structures and fine wavelets to small, sharp ones. Because each wavelet is localised in space (unlike the global sine waves of the Fourier transform) the response changes only slightly when the image is slightly warped. Its shortcoming is that the raw response is \emph{not} translation-invariant: shift the image and every coefficient shifts with it, so two patches of the same tissue at different positions look different to a classifier.
 
-The wavelet scattering transform (WST), introduced by Mallat and by Bruna and Mallat \cite{mallat2012invariant, bruna2013invariant}, removes this nuisance sensitivity while keeping the useful texture information. It alternates wavelet convolutions with a modulus non-linearity and a low-pass average at scale $2^J$: the modulus turns each oscillating response into a smooth positive envelope, and the averaging makes the descriptor invariant to shifts smaller than $2^J$. Averaging discards fine detail, but feeding the envelope back through further wavelet-and-modulus steps recovers it, building successive \emph{scattering orders} $S_0, S_1, S_2, \dots$: the zeroth order is the blurred image, and each higher order recovers structure the previous averaging discarded. The full definitions are given in Section~\ref{sec:ws}.
+The wavelet scattering transform (WST), introduced by Mallat and by Bruna and Mallat \cite{mallat2012invariant, bruna2013invariant}, removes this nuisance sensitivity while keeping the useful texture information. It alternates three operations---a wavelet convolution, a modulus, and a low-pass average at scale $2^J$---and reads out a coefficient map, the scattering order $S_m$, at each stage (Figure~\ref{fig:wst}). The modulus turns each oscillating response into a smooth envelope and the averaging makes it invariant to shifts below $2^J$; because that averaging discards fine detail, each higher order recovers what the previous stage lost. Formal definitions are given in Section~\ref{sec:ws}.
 
-Three properties make this representation well suited to small mammography datasets. It is locally translation-invariant, so the same tissue at different positions maps to nearly the same features. It is stable to small deformations: a small warp of the image changes the coefficients only a little, and in a controlled, bounded way (a Lipschitz-continuity guarantee \cite{mallat2012invariant}), so the natural variation between patches of one class does not confuse the descriptor. And almost all of its energy is captured within the first two orders, so second-order scattering is the standard and sufficient choice \cite{bruna2013invariant}. The wavelet filters are fixed in advance: the WST has nothing to learn and therefore cannot overfit, which is why it can be applied directly to a few hundred patches.
+\begin{figure}[t]
+\centering
+%TC:ignore
+\begin{tikzpicture}[
+  >={Stealth[length=2.4mm]},
+  font=\small,
+  node distance=7mm and 9mm,
+  op/.style   ={draw=black!55, fill=black!4, rounded corners=1.5pt,
+                minimum height=8mm, minimum width=11mm, inner sep=2.5pt, align=center},
+  prop/.style ={draw=black!55, fill=black!10, rounded corners=1.5pt,
+                minimum height=8mm, minimum width=11mm, inner sep=2.5pt, align=center},
+  ord/.style  ={draw=accent, line width=0.8pt, fill=accent!8, rounded corners=1.5pt,
+                minimum height=10mm, minimum width=13mm, align=center, inner sep=2pt},
+  inp/.style  ={draw=black!70, fill=black!12, rounded corners=1.5pt,
+                minimum height=8mm, minimum width=11mm, align=center},
+  rep/.style  ={draw=accent, line width=0.9pt, fill=accent!5, rounded corners=2pt,
+                minimum height=10mm, align=center},
+  a/.style    ={->, draw=black!60, line width=0.6pt},
+  tap/.style  ={->, draw=accent!85!black, line width=0.6pt},
+]
+\node[inp] (x)                       {input\\patch $x$};
+\node[op,   right=of x]   (w1)       {$\star\,\psi_{\lambda_1}$};
+\node[prop, right=of w1,
+      label={[font=\footnotesize,text=inkgrey,inner sep=1.5pt]above:$U_1$}] (u1) {$|\cdot|$};
+\node[op,   right=of u1]  (w2)       {$\star\,\psi_{\lambda_2}$};
+\node[prop, right=of w2,
+      label={[font=\footnotesize,text=inkgrey,inner sep=1.5pt]above:$U_2$}] (u2) {$|\cdot|$};
+\node[right=5mm of u2, text=inkgrey, align=left] (dots)
+      {$\cdots$\\[-2pt]{\scriptsize order $m{+}1$}};
+\draw[a] (x)  -- (w1);
+\draw[a] (w1) -- (u1);
+\draw[a] (u1) -- (w2);
+\draw[a] (w2) -- (u2);
+\draw[a] (u2) -- (dots);
+\node[op,  below=of x]  (p0) {$\star\,\phi_J$};
+\node[ord, below=of p0] (S0) {$S_0$};
+\node[op,  below=of u1] (p1) {$\star\,\phi_J$};
+\node[ord, below=of p1] (S1) {$S_1$};
+\node[op,  below=of u2] (p2) {$\star\,\phi_J$};
+\node[ord, below=of p2] (S2) {$S_2$};
+\draw[tap] (x)  -- (p0);   \draw[tap] (p0) -- (S0);
+\draw[tap] (u1) -- (p1);   \draw[tap] (p1) -- (S1);
+\draw[tap] (u2) -- (p2);   \draw[tap] (p2) -- (S2);
+\coordinate (rl) at ($(S0.south west)+(-1mm,-9mm)$);
+\coordinate (rr) at ($(S2.south east)+( 1mm,-9mm)$);
+\node[rep, fit=(rl)(rr), inner sep=2pt]
+  (rep) {scattering representation --- coefficient maps $\{S_0,S_1,S_2\}$};
+\draw[tap] (S0) -- (S0|-rep.north);
+\draw[tap] (S1) -- (S1|-rep.north);
+\draw[tap] (S2) -- (S2|-rep.north);
+\node[above=5mm of w1, font=\scriptsize, text=inkgrey, align=center]
+  {one path $\lambda$ shown; the cascade is repeated over all scales and orientations};
+\node[draw=black!25, fill=black!2, rounded corners=2pt, inner sep=4pt,
+      below=6mm of rep.south, anchor=north, align=center, font=\scriptsize, text=inkgrey]
+  {$\star\,\psi_{\lambda}$: wavelet convolution \quad $|\cdot|$: modulus \quad
+   $\star\,\phi_J$: low-pass average (invariance scale $2^{J}$)\\[2pt]
+   internal nodes $U_m$: propagated (scalogram) coefficients \quad
+   outputs $S_m = U_m \star \phi_J$: scattering coefficients};
+\end{tikzpicture}
+%TC:endignore
+\caption[Wavelet scattering cascade]{The wavelet scattering cascade (following \cite{mallat2012invariant,bruna2013invariant}). The propagation spine (top) alternates a wavelet convolution $\star\psi_\lambda$ and a modulus $|\cdot|$, giving the scalogram coefficients $U_m$; a low-pass average $\star\phi_J$ read out at each stage produces the scattering orders $S_m = U_m\star\phi_J$ (coefficient maps). One path $\lambda$ is shown; the cascade runs over all scales and orientations, and order~2 captures nearly all the energy.}
+\label{fig:wst}
+\end{figure}
+
+Figure~\ref{fig:scalogram} makes this concrete. The wavelet scalogram of an intensity profile through a mass---the wavelet-modulus coefficients $|x\star\psi_\lambda|$ at each frequency and position, before the low-pass average---spreads structure across a range of frequencies at once: the smooth interior at low energy, the margins as localised features. This is the frequency-resolved picture a multi-scale representation is built to capture.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.66\textwidth]{../data/outputs/report_figures/wavelet_scalogram.png}
+\caption[Wavelet scalogram of a mass profile]{Wavelet scalogram (the wavelet analogue of a spectrogram) of a 1-D intensity profile through a mammographic mass (file\_id 22427751): (a) the patch with the analysis line, (b) the intensity profile, (c) the wavelet-modulus coefficients $|x\star\psi_\lambda|$, with frequency (log) on the vertical axis and position on the horizontal. Structure spans many frequencies at once---the smooth interior at low energy, the margins as localised features---which a multi-scale representation is built to capture. A 1-D profile is shown for clarity; the model applies the transform in 2-D.}
+\label{fig:scalogram}
+\end{figure}
+
+Three properties make this representation well suited to small mammography datasets. It is locally translation-invariant, so the same tissue at different positions maps to nearly the same features. It is stable to small deformations: a small warp of the image changes the coefficients only a little, and in a controlled, bounded way (a Lipschitz-continuity guarantee \cite{mallat2012invariant}), so the natural variation between patches of one class does not confuse the descriptor. And second-order scattering captures nearly all the energy \cite{bruna2013invariant}. The wavelet filters are fixed in advance: the WST has nothing to learn and therefore cannot overfit, which is why it can be applied directly to a few hundred patches.
 
 \section{How the representation is summarised}
 

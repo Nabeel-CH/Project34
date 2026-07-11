@@ -13,10 +13,9 @@ limitations that qualify the numbers.
 
 \section{Interpreting the replication: where fusion helps, and why}
 
-The CNN~+~WS fusion evaluated here is a faithful instance of the paper's Model~5: a
-training-fold-standardised concatenation of the $512$-dimensional CNN average-pool vector
-and the $406$-dimensional wavelet-scattering vector, classified by the same Subspace k-NN
-ensemble, with no GLCM branch. Read against the four implementation differences in Chapter~\ref{sec:results}, the
+The CNN~+~WS fusion evaluated here is a faithful instance of the paper's Model~5
+(Figure~\ref{fig:pipeline}): a training-fold-standardised concatenation of the CNN and WS
+vectors, classified by the same Subspace k-NN ensemble. Read against the four implementation differences in Chapter~\ref{sec:results}, the
 interpretation is clear: the paper's central mechanism (handcrafted scattering features
 rescuing a data-starved CNN) reproduces \emph{exactly in the regime the paper invokes it,
 and only there}. On
@@ -113,7 +112,7 @@ single held-out split.
 or fusion features is optimistic, because the extractor has effectively already seen the
 inner-validation fold; the ${\sim}0.99$ mass CV figures (marked ``(opt.)'' in
 Table~\ref{tab:results_mass}) are not out-of-sample estimates, whereas the five-seed
-held-out AU-ROCs ($0.762$ and $0.816$) are. The project therefore leads with held-out AU-ROC
+held-out AU-ROCs ($0.762$ and $0.816$) are. Razali's own Table~7 shows the same gap---mass CV exceeds test accuracy for the learned models ($100.0\%$/$83.3\%$ CNN, $98.0\%$/$91.7\%$ fusion) but not for WS-only ($69.0\%$/$83.3\%$)---read there as limited data, not the CV optimism identified here. The project therefore leads with held-out AU-ROC
 as the mass headline and uses group-aware CV only as a stability check, and, for the
 classical WS methods where nothing is learned, as a like-for-like comparison with the paper.
 
@@ -168,10 +167,6 @@ the Otsu breast mask and the patch sampler's minimum target-fraction absorb the 
     \item \textbf{Feature standardisation.} The paper does not mention standardising features
     before the Subspace k-NN; we do, since k-NN is distance-based. This may slightly help our
     WS results, but the qualitative picture (WS-tissue trailing the paper) is unchanged.
-    \item \textbf{GLCM branch excluded.} The GLCM and CNN+GLCM/CNN+WS+GLCM configurations
-    (paper Models~3, 4, 6) are out of scope; the paper itself reports GLCM adds no
-    accuracy, precision, recall or F1 and only $+0.01$ AU-ROC over CNN+WS, so the practical
-    impact is small.
     \item \textbf{Mass invariance scale not fully tuned.} The scattering-covariance $J/L$
     tuning was carried out on tissue; on mass we ran only an $L$-control at $J=6$ (no gain)
     and adopted $J=3$ maps, consistent with Bruna and Mallat's \cite{bruna2013invariant}

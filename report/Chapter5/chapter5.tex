@@ -60,26 +60,16 @@ Figures~\ref{fig:all_methods_tissue} and~\ref{fig:all_methods_mass} rank every m
 
 \section{Region-aware wavelet scattering (mass)} \label{sec:region_aware}
 
-Averaged WS fails on mass because it discards \emph{where} lesion structure lies; rather than enrich a scalar descriptor, the region-aware model keeps the scattering maps at a lower invariance scale and lets a small CNN learn over them, with a lesion-relative decomposition as its interpretable, morphology-conditioned instantiation.
+Averaged WS fails on mass because it discards \emph{where} lesion structure lies; rather than enrich a scalar descriptor, the region-aware model reworks the pipeline's wavelet-scattering branch (Figure~\ref{fig:pipeline}): it keeps the scattering maps at a lower invariance scale and lets a small CNN learn over them, with a lesion-relative decomposition as its interpretable, morphology-conditioned instantiation.
 
 \subsection*{Construction}
-The extension has four ingredients. \textbf{Region masks.} Each \texttt{Name="Mass"} polygon is rasterised, and four lesion-relative regions are derived by morphology (a full region (lesion plus margin), an inner eroded core, a boundary annulus, and a context surround), sized as a fraction of the lesion box so the decomposition scales with lesion size. \textbf{$J=3$ scattering maps.} Each region is scattered at $J=3, L=5$ rather than the paper's $J=6$, retaining a $28\times28$ grid of $91$ coefficient channels per region ($28\times28$ from downsampling the $224$-pixel patch by $2^{J}{=}8$; $91 = 1$ order-0 $+\,15$ order-1 $+\,75$ order-2 paths) instead of the near-scalar grid $J=6$ produces; stacking the four regions gives a $4\times91$-channel, $28\times28$ tensor that preserves where energy sits. \textbf{WS-map CNN head.} A small network (two $3\times3$ Conv--BN--ReLU blocks ($32$ channels), global average pooling, dropout $0.5$, linear classifier; Adam ($\eta=10^{-3}$, weight decay $3\times10^{-4}$), $60$ epochs, batch $24$) learns the spatial relationships a hand-pooled summary discards. \textbf{Comparators.} A classical region-aware baseline (per-channel pooled statistics $\to$ logistic regression / Subspace k-NN, isolating the decomposition from the learned head), an improved CNN ($512$-d frozen-ResNet18 features on a square lesion crop $\to$ logistic regression), and a decision-level late fusion of the region-aware WS$\rightarrow$CNN and improved-CNN probabilities.
+The extension has four ingredients. \textbf{Region masks.} Each \texttt{Name="Mass"} polygon is rasterised, and four lesion-relative regions are derived by morphology (the full patch, an inner eroded core, a boundary annulus, and a context surround; Figure~\ref{fig:regions}), sized as a fraction of the lesion box so the decomposition scales with lesion size. \textbf{$J=3$ scattering maps.} Each region is scattered at $J=3, L=5$ rather than the paper's $J=6$, retaining a $28\times28$ grid of $91$ coefficient channels per region ($28\times28$ from downsampling the $224$-pixel patch by $2^{J}{=}8$; $91 = 1$ order-0 $+\,15$ order-1 $+\,75$ order-2 paths) instead of the near-scalar grid $J=6$ produces; stacking the four regions gives a $4\times91$-channel, $28\times28$ tensor that preserves where energy sits. \textbf{WS-map CNN head.} A small network (two $3\times3$ Conv--BN--ReLU blocks ($32$ channels), global average pooling, dropout $0.5$, linear classifier; Adam ($\eta=10^{-3}$, weight decay $3\times10^{-4}$), $60$ epochs, batch $24$) learns the spatial relationships a hand-pooled summary discards. \textbf{Comparators.} A classical region-aware baseline (per-channel pooled statistics $\to$ logistic regression / Subspace k-NN, isolating the decomposition from the learned head), an improved CNN ($512$-d frozen-ResNet18 features on a square lesion crop $\to$ logistic regression), and a decision-level late fusion of the region-aware WS$\rightarrow$CNN and improved-CNN probabilities.
 
-The spectrogram diagnostic of Figure~\ref{fig:region_ws_spectrogram} gives a visualisation-only view for a size-matched malignant/benign pair: pooling the first-order maps by scale and orientation on a shared colour scale, the malignant lesion's boundary region carries the strongest coarse-scale energy (consistent with the irregular, spiculated margins of malignancy) while the benign lesion's energies are lower and more even. Because the heatmap is itself a spatial average it over-states the boundary's role: the ablation below shows the learned CNN, which sees the full maps, does not lean on any single region ($0.946 \rightarrow 0.939$ when the boundary is dropped).
-
-\begin{figure}[H]
+\begin{figure}[t]
 \centering
-\begin{subfigure}{0.9\textwidth}\centering
-\includegraphics[width=\textwidth]{../data/outputs/recovered_region_aware_ws_cnn/region_aware_ws_spectrogram_example.png}
-\caption[Malignant example (BI-RADS 5)]{Malignant lesion (file\_id 22614431, BI-RADS~5).}\label{fig:region_ws_spectrogram_mal}
-\end{subfigure}
-\vspace{0.5em}
-\begin{subfigure}{0.9\textwidth}\centering
-\includegraphics[width=\textwidth]{../data/outputs/recovered_region_aware_ws_cnn/region_aware_ws_spectrogram_benign_example.png}
-\caption[Benign example (BI-RADS 3), size-matched]{Benign lesion (file\_id 20587928, BI-RADS~3), size-matched by area.}\label{fig:region_ws_spectrogram_benign}
-\end{subfigure}
-\caption[Wavelet-scattering spectrogram diagnostic]{Coarse-grained $S_1$ log-energy spectrograms for a matched malignant/benign pair on a shared colour scale (display only; the model receives the full $28\times28$ maps). The classes differ chiefly in the boundary region's coarse-scale energy.}
-\label{fig:region_ws_spectrogram}
+\includegraphics[width=\textwidth]{../data/outputs/recovered_region_aware_ws_cnn/region_decomposition.png}
+\caption[Lesion-relative region decomposition]{The four lesion-relative regions the region-aware branch operates on, for a malignant example (file\_id 22427751, BI-RADS~5). The \texttt{Name="Mass"} polygon is eroded and dilated by $8$~px to define an inner core, a boundary annulus straddling the lesion edge, and a context surround; the full patch is kept as the fourth region. Panel~1 shows the full patch with the inner (blue), lesion-polygon (yellow) and context (orange) boundaries---the margin band straddles the lesion edge. Each region is wavelet-scattered separately at $J{=}3,L{=}5$, and the four map stacks are concatenated for the WS-map CNN.}
+\label{fig:regions}
 \end{figure}
 
 \subsection*{Results}
@@ -112,27 +102,14 @@ Late fusion (region-aware WS$\rightarrow$CNN $\oplus$ improved CNN) & $0.948 \pm
 \label{fig:region_story}
 \end{figure}
 
-A region ablation (Table~\ref{tab:region_ablation}) tests the decomposition. Every configuration that retains a $J=3$ map and learns over it sits far above the averaged-WS baseline ($0.726$); the strongest are the complete all-four tensor ($0.946$), the full$+$inner pair ($0.940$), and the drop-boundary variant ($0.939$). These overlap within across-seed spread, so the region ordering should not be over-read: the robust conclusion is that preserving the map is what matters, and using all four regions is the principled, currently strongest complete representation (core, margin, whole lesion, context).
+A region ablation (Figure~\ref{fig:region_ablation}) tests the decomposition. Every configuration that retains a $J=3$ map and learns over it sits far above the averaged-WS baseline ($0.726$); the strongest are the complete all-four tensor ($0.946$), the full$+$inner pair ($0.940$), and the drop-boundary variant ($0.939$). These overlap within across-seed spread, so the region ordering should not be over-read: the learned CNN, which sees the full maps, does not lean on any single region, and the robust conclusion is that preserving the map is what matters, and using all four regions is the principled, currently strongest complete representation (core, margin, whole lesion, context).
 
-\begin{table}[H]
+\begin{figure}[H]
 \centering
-\caption[Region ablation for the WS$\rightarrow$CNN head]{Region ablation (five-seed AU-ROC). All sit above the averaged-WS baseline ($0.726$); differences among the strongest are within seed noise.}
-\label{tab:region_ablation}
-\begin{tabular}{lc}
-\toprule
-\textbf{Region configuration} & \textbf{AU-ROC} \\
-\midrule
-ALL four (full+inner+boundary+context)    & $0.946 \pm 0.036$ \\
-Full + inner                              & $0.940 \pm 0.015$ \\
-Drop boundary (full+inner+context)        & $0.939 \pm 0.035$ \\
-Full + boundary                           & $0.933 \pm 0.039$ \\
-Drop context (full+inner+boundary)        & $0.931 \pm 0.020$ \\
-Context only                              & $0.926 \pm 0.034$ \\
-Inner only                                & $0.922 \pm 0.034$ \\
-Full region only                          & $0.904 \pm 0.066$ \\
-\bottomrule
-\end{tabular}
-\end{table}
+\includegraphics[width=0.9\textwidth]{../data/outputs/recovered_region_aware_ws_cnn/region_ablation.png}
+\caption[Region ablation for the WS$\rightarrow$CNN head]{Region ablation (mass, five-seed AU-ROC mean~$\pm$~std) across all twelve region configurations, coloured by ablation type. Every configuration sits far above the averaged-WS baseline ($0.726$, dashed); the strongest overlap within across-seed spread, so the region ordering should not be over-read. The adopted all-four tensor is the strongest complete representation.}
+\label{fig:region_ablation}
+\end{figure}
 
 \textbf{Comparators (brief).} Two CNN-side comparators complement the region-aware model without beating it. A frozen ResNet18 with a logistic-regression head is far steadier than the fine-tuned CNN of the replication; varying only the crop gives tight $0.906$, square $0.857$, and expanded $0.820$ (tight and square overlap within noise; the square crop is the ``improved CNN'' comparator above). On the whole patch, feature fusion of the frozen CNN with averaged WS reaches $0.882$ and late-probability fusion $0.858$: neither approaches the region-aware branch. Late fusion helps (Table~\ref{tab:region_story}, $0.948$) precisely because one branch already preserves lesion structure: fusion amplifies a good spatial branch but cannot manufacture one from averaged features.
 

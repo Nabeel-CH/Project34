@@ -3,7 +3,65 @@
 
 \chapter{Data, Preprocessing, Methods, and Experimental Protocol} \label{sec:methodology}
 
-The pipeline runs from raw-mammogram preprocessing through patch extraction and labelling to feature computation, classification, and evaluation.
+The end-to-end pipeline is summarised in Figure~\ref{fig:pipeline}; this chapter then details each stage, from the dataset (Section~\ref{sec:dataset}) to the evaluation protocol (Section~\ref{sec:eval_protocol}).
+
+\begin{figure}[t]
+\centering
+%TC:ignore
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  >={Stealth[length=2.6mm]},
+  font=\small,
+  node distance=6mm and 7mm,
+  io/.style   ={draw=black!70, fill=black!12, rounded corners=2pt,
+                minimum height=11mm, minimum width=17mm, align=center, inner sep=2.5pt},
+  stage/.style={draw=black!60, fill=black!5, rounded corners=2pt,
+                minimum height=11mm, minimum width=18mm, align=center, inner sep=2.5pt},
+  ws/.style   ={draw=accent, fill=accent!7, line width=0.7pt, rounded corners=2pt,
+                minimum height=15mm, minimum width=29mm, align=center, inner sep=2.5pt},
+  cnn/.style  ={draw=amber, fill=amber!10, line width=0.7pt, rounded corners=2pt,
+                minimum height=15mm, minimum width=29mm, align=center, inner sep=2.5pt},
+  fuse/.style ={draw=black!60, fill=black!7, rounded corners=2pt,
+                minimum height=11mm, minimum width=15mm, align=center, inner sep=2.5pt},
+  clf/.style  ={draw=accent, fill=accent!5, line width=0.9pt, rounded corners=2pt,
+                minimum height=17mm, minimum width=22mm, align=center, inner sep=2.5pt},
+  a/.style    ={->, draw=black!60, line width=0.7pt},
+  mdl/.style  ={font=\scriptsize, text=inkgrey, fill=white, inner sep=1.2pt},
+  tag/.style  ={font=\scriptsize, text=inkgrey, align=center},
+]
+\node[io] (dicom) {INbreast\\mammogram\\{\scriptsize (DICOM)}};
+\node[stage, right=of dicom] (pre)
+  {Preprocessing\\{\scriptsize normalise $\cdot$ pectoral}\\{\scriptsize Otsu mask $\cdot$ CLAHE}};
+\node[stage, right=of pre] (patch)
+  {Patch extraction\\$224\times224$\\{\scriptsize tissue \& mass}};
+\draw[a] (dicom) -- (pre);
+\draw[a] (pre) -- (patch);
+\node[ws,  above right=5mm and 9mm of patch] (ws)
+  {Wavelet scattering (WS)\\{\scriptsize Kymatio: $J{=}6,\ L{=}5$, order 2}\\spatial average $\to$ \textbf{406-d}};
+\node[cnn, below right=5mm and 9mm of patch] (cnn)
+  {CNN: ResNet18\\{\scriptsize ImageNet, fine-tuned}\\avg-pool $\to$ \textbf{512-d}};
+\node[tag, above=0.8mm of ws]  {training-free (fixed filters)};
+\node[tag, below=0.8mm of cnn] {trained --- re-fit on each split};
+\draw[a] (patch.east) to[out=0,in=180] (ws.west);
+\draw[a] (patch.east) to[out=0,in=180] (cnn.west);
+\node[fuse] (cat) at ($(ws.east)!0.5!(cnn.east) + (12mm,0)$)
+  {$\oplus$ concat\\\textbf{918-d}};
+\node[clf, right=10mm of cat] (knn)
+  {Subspace $k$-NN\\ensemble\\{\scriptsize 80 learners, 190-d}};
+\node[io, right=9mm of knn] (out)
+  {prediction\\{\scriptsize fatty / fibroglandular}\\{\scriptsize benign / malignant}};
+\draw[a] (ws.south east)  to[out=-30,in=155] (cat.north west);
+\draw[a] (cnn.north east) to[out=30,in=205]  (cat.south west);
+\draw[a] (cat.east) -- (knn.west) node[mdl,midway,above]{fusion};
+\draw[a] (ws.east)  -| (knn.north) node[mdl,pos=0.30,below]{WS-only};
+\draw[a] (cnn.east) -| (knn.south) node[mdl,pos=0.30,above]{CNN-only};
+\draw[a] (knn) -- (out);
+\end{tikzpicture}%
+}
+%TC:endignore
+\caption[End-to-end classification pipeline]{The end-to-end classification pipeline. Shared preprocessing and $224\times224$ patch extraction feed two parallel feature branches---training-free wavelet scattering (406-d) and a fine-tuned ResNet18 CNN (512-d). Each branch is classified alone (WS-only, CNN-only) or concatenated and classified as their fusion (918-d) by the same Subspace $k$-NN ensemble; these are the paper's Models~2, 1 and~5. One pipeline serves both the tissue and mass tasks.}
+\label{fig:pipeline}
+\end{figure}
 
 \section{Dataset: INbreast} \label{sec:dataset}
 
@@ -106,7 +164,7 @@ The wavelet scattering transform gives a non-learned representation that is loca
 S_1 x = |x \star \psi_{\lambda_1}| \star \phi_J, \qquad
 S_2 x = ||x \star \psi_{\lambda_1}| \star \psi_{\lambda_2}| \star \phi_J,
 \]
-with $\psi_{\lambda}$ oriented wavelets; concatenating the orders gives the feature vector. We compute this with Kymatio \cite{andreux2020kymatio} at $J=6$ (invariance scale $2^J=64$~px), $L=5$ Morlet orientations \cite{morlet1982wave}, maximum order 2, on $224 \times 224$ patches, and spatially average each coefficient map to one scalar per path, a 406-dimensional vector. Table~\ref{tab:ws_config} sets this against the paper's configuration; the count differs (406 versus 391) only because Kymatio uses all six scales with $L=5$ where MATLAB reserves one scale for the low-pass filter and uses $L=6$ (both follow $1 + JL + \binom{J}{2} L^2$ for the respective $J,L$), a library convention with no modelling significance.
+with $\psi_{\lambda}$ oriented wavelets; concatenating the orders gives the feature vector (the cascade is depicted in Figure~\ref{fig:wst}). We compute this with Kymatio \cite{andreux2020kymatio} at $J=6$ (invariance scale $2^J=64$~px), $L=5$ Morlet orientations \cite{morlet1982wave}, maximum order 2, on $224 \times 224$ patches, and spatially average each coefficient map to one scalar per path, a 406-dimensional vector. Table~\ref{tab:ws_config} sets this against the paper's configuration; the count differs (406 versus 391) only because Kymatio uses all six scales with $L=5$ where MATLAB reserves one scale for the low-pass filter and uses $L=6$ (both follow $1 + JL + \binom{J}{2} L^2$ for the respective $J,L$), a library convention with no modelling significance.
 
 \textbf{Order and invariance scale.} Both follow Bruna and Mallat \cite{bruna2013invariant}. Scattering energy decays exponentially with path length (over 99\% within $m\le3$), and second-order coefficients recover the higher-moment texture that first-order coefficients discard (enough to separate textures with identical power spectra), so order 2 is standard and higher orders add negligible energy. The large invariance scale suits the tissue task, which is stationary-texture discrimination: Bruna and Mallat show the optimal invariance scale then approaches the patch width (minimising estimator variance), so a large $J$, and the near-complete pooling it produces, is appropriate here.
 
