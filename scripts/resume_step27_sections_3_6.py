@@ -24,8 +24,8 @@ from sklearn.preprocessing import StandardScaler
 warnings.filterwarnings("ignore", category=UserWarning)
 
 PROJECT = Path(__file__).resolve().parents[1]
-if str(PROJECT) not in sys.path:
-    sys.path.insert(0, str(PROJECT))
+if str(PROJECT / "src") not in sys.path:
+    sys.path.insert(0, str(PROJECT / "src"))
 
 from project34.protocol import SEEDS  # noqa: E402
 
